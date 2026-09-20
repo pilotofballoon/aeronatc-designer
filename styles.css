@@ -112,12 +112,9 @@ button { font: inherit; color: inherit; }
 /* Небо: заливка сцены под прозрачным канвасом. Те же стопы продублированы
    в scene.js — SKY_STOPS, чтобы выгрузка PNG совпадала с экраном. */
 #stage.sky {
-  background:
-    radial-gradient(60% 22% at 22% 62%, rgba(255,255,255,.55), rgba(255,255,255,0) 70%),
-    radial-gradient(48% 18% at 72% 55%, rgba(255,255,255,.42), rgba(255,255,255,0) 72%),
-    radial-gradient(38% 14% at 48% 74%, rgba(255,255,255,.38), rgba(255,255,255,0) 70%),
-    radial-gradient(30% 10% at 88% 70%, rgba(255,255,255,.34), rgba(255,255,255,0) 72%),
-    linear-gradient(180deg, #12467f 0%, #2f7cbe 26%, #7bb4e0 48%, #bcdcf1 66%, #e8f2f8 82%, #f6f7f3 100%);
+  background-size: cover;
+  background-position: center 38%;
+  background-repeat: no-repeat;
 }
 
 .stage-tools {

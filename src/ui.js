@@ -138,22 +138,17 @@ export class UI {
       </div>
 
       <div class="section">
-        <h4>Юбка</h4>
-        <div class="rows">
-          <button class="btn block" id="fillSkirt">Залить юбку активным цветом</button>
-          <button class="btn block" id="altSkirt">Залить юбку через один</button>
-        </div>
-        <p class="hint">Или кликайте по сегментам юбки прямо на 3D-модели.</p>
-      </div>
-
-      <div class="section">
         <h4>Воздухозаборник</h4>
         <div class="rows">
-          <button class="btn block" id="fillScoop">Залить фартук активным цветом</button>
+          <button class="btn block" id="fillScoop">Залить воздухозаборник</button>
           <button class="btn block" id="altScoop">Залить через клин</button>
         </div>
-        <p class="hint">Фартук из 5 клиньев на полокружности — ловит ветер при наполнении.
-          Кликайте по клиньям на 3D, каждый красится отдельно.</p>
+        <label class="switch" style="margin-top:8px">
+          <input type="checkbox" id="linkBottom" ${state.linkBottom ? 'checked' : ''}>
+          Нижний ряд оболочки — той же тканью</label>
+        <p class="hint">Фартук из 5 клиньев занимает полокружности со стороны широкой грани
+          гондолы и крепится к стойкам рамы. Каждый клин красится отдельно — кликом по 3D.
+          Нижний ряд полотнищ кроится из той же ткани, поэтому по умолчанию следует за фартуком.</p>
       </div>
 
       <div class="section">
@@ -203,14 +198,10 @@ export class UI {
       this.renderBody();
     });
 
-    this.body.querySelector('#fillSkirt').addEventListener('click', () => {
-      mark(); state.skirt = state.skirt.map(() => state.active); commit('skirt'); app.refreshAll();
+    this.body.querySelector('#linkBottom').addEventListener('change', (e) => {
+      mark(); state.linkBottom = e.target.checked; commit('link'); app.refreshAll();
     });
-    this.body.querySelector('#altSkirt').addEventListener('click', () => {
-      mark();
-      state.skirt = state.skirt.map((c, i) => (i % 2 ? state.secondary : state.active));
-      commit('skirt'); app.refreshAll();
-    });
+
     this.body.querySelector('#fillScoop').addEventListener('click', () => {
       mark(); state.scoop = state.scoop.map(() => state.active); commit('scoop'); app.refreshAll();
     });
@@ -235,7 +226,6 @@ export class UI {
       mark();
       state.panels = state.panels.map(() => 'S05');
       state.valve = state.valve.map(() => 'S05');
-      state.skirt = state.skirt.map(() => 'S03');
       state.scoop = state.scoop.map(() => 'P17');
       commit('reset'); app.refreshAll();
     });

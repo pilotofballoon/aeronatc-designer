@@ -46,7 +46,33 @@ const TARGET_PANEL_H = 1.45;     // целевая высота полотнищ
 const SUB_U = 4;                 // подразбиение полотнища поперёк клина
 const SUB_V = 2;                 // подразбиение полотнища по высоте
 
+// Купол не сходится в точку: в нём вырезано круглое отверстие под парашютный
+// клапан. Доли от радиуса оболочки.
+export const CROWN_R = 0.33;     // радиус отверстия
+export const VALVE_R = 0.36;     // клапан чуть больше отверстия
+
+// Габариты подвески, м. Гондола берётся из каталога, остальное типовое.
+export const BASKET_H = 1.15;
+export const UPRIGHT_H = 1.05;
+export const BURNER_H = 0.32;
+export const PILOT_H = 1.75;
+
 function lerp(a, b, t) { return a + (b - a) * t; }
+
+// Срезаем верхушку профиля по отверстию купола, оставляя точную точку среза.
+function truncateCrown(prof) {
+  let iMax = 0;
+  for (let i = 1; i < prof.length; i++) if (prof[i][1] > prof[iMax][1]) iMax = i;
+  for (let i = iMax; i < prof.length; i++) {
+    if (prof[i][1] <= CROWN_R) {
+      const [y0, r0] = prof[i - 1];
+      const [y1, r1] = prof[i];
+      const t = (r0 - CROWN_R) / (r0 - r1 || 1);
+      return [...prof.slice(0, i), [lerp(y0, y1, t), CROWN_R]];
+    }
+  }
+  return prof;
+}
 
 // Линейная интерполяция профиля с равномерным шагом по y.
 function sampleProfile(shape) {
@@ -68,12 +94,14 @@ function sampleProfile(shape) {
 export function dims(model) {
   const shape = model.shape || 'classic';
   const aspect = ASPECT[shape] || 1.06;
-  const prof = sampleProfile(shape);
+  const full = sampleProfile(shape);
+  // Объём считаем по полному профилю: отверстие закрыто клапаном.
+  const prof = truncateCrown(full);
 
   let I = 0;
-  for (let i = 0; i < prof.length - 1; i++) {
-    const rm = (prof[i][1] + prof[i + 1][1]) / 2;
-    I += rm * rm * (prof[i + 1][0] - prof[i][0]);
+  for (let i = 0; i < full.length - 1; i++) {
+    const rm = (full[i][1] + full[i + 1][1]) / 2;
+    I += rm * rm * (full[i + 1][0] - full[i][0]);
   }
 
   const D = Math.cbrt((4 * model.volume) / (Math.PI * aspect * I));
@@ -91,7 +119,7 @@ export function dims(model) {
   }
 
   const rows = Math.min(30, Math.max(8, Math.round(arc / TARGET_PANEL_H)));
-  return { shape, aspect, prof, R, D, H, arc, cum, rows, gores: model.gores };
+  return { shape, aspect, prof, full, R, D, H, arc, cum, rows, gores: model.gores };
 }
 
 // Границы рядов: равные отрезки по длине меридиана, снизу вверх.
@@ -275,49 +303,52 @@ export function buildTapes(env) {
 }
 
 /**
- * Парашютный клапан — круг в куполе, разбитый на сектора.
- * Число секторов вдвое меньше числа клиньев (но не меньше 6).
+ * Парашютный клапан — круглый диск чуть шире отверстия в куполе,
+ * лежащий ВНУТРИ оболочки. Сегменты только задают раскраску, контур круглый.
  */
 export function valveSpec(env) {
-  const { dims: d, gores } = env;
-  const segs = Math.max(6, Math.round(gores / 2));
-  // Диаметр клапана — 36 % диаметра оболочки (замерено по серийной модели).
-  const rTarget = d.R * 0.36;
-  // Найти высоту, на которой радиус профиля равен rTarget (в куполе).
-  let y = d.H * 0.97;
-  for (let i = d.prof.length - 1; i > 1; i--) {
-    if (d.prof[i][1] * d.R >= rTarget) { y = d.prof[i][0] * d.H; break; }
-  }
-  return { segs, radius: rTarget, y };
+  const d = env.dims;
+  const segs = Math.max(6, Math.round(env.gores / 2));
+  const top = d.prof[d.prof.length - 1];      // точка среза купола
+  return {
+    segs,
+    radius: VALVE_R * d.R,
+    hole: CROWN_R * d.R,
+    y: top[0] * d.H - d.H * 0.018,            // чуть ниже кромки — внутри
+  };
 }
 
 export function buildValve(env) {
   const { segs, radius, y } = valveSpec(env);
+  const ANG = 5;                               // дробление сегмента по дуге
+  const RAD = 3;                               // дробление по радиусу
+  const sag = radius * 0.13;                   // провис ткани внутрь
   const pos = [], nor = [], col = [], idx = [];
   const ranges = [];
   let v = 0;
-  const dome = radius * 0.16;
+
   for (let s = 0; s < segs; s++) {
-    const a0 = (s / segs) * Math.PI * 2;
-    const a1 = ((s + 1) / segs) * Math.PI * 2;
     const start = v;
-    const steps = 3;
-    for (let k = 0; k < steps; k++) {
-      const t0 = k / steps, t1 = (k + 1) / steps;
-      const base = v;
-      for (const [a, t] of [[a0, t0], [a1, t0], [a1, t1], [a0, t1]]) {
-        const r = radius * t;
-        const yy = y + dome * (1 - t * t) + 0.02;
-        pos.push(r * Math.cos(a), yy, r * Math.sin(a));
-        const n = new THREE.Vector3(r * Math.cos(a) * 0.3, 1, r * Math.sin(a) * 0.3).normalize();
-        nor.push(n.x, n.y, n.z);
-        col.push(1, 1, 1);
-        v++;
+    for (let i = 0; i < ANG; i++) {
+      const a0 = ((s + i / ANG) / segs) * Math.PI * 2;
+      const a1 = ((s + (i + 1) / ANG) / segs) * Math.PI * 2;
+      for (let k = 0; k < RAD; k++) {
+        const t0 = k / RAD, t1 = (k + 1) / RAD;
+        const base = v;
+        for (const [a, t] of [[a0, t0], [a1, t0], [a1, t1], [a0, t1]]) {
+          const r = radius * t;
+          pos.push(r * Math.cos(a), y - sag * (1 - t * t), r * Math.sin(a));
+          const n = new THREE.Vector3(-r * Math.cos(a) * 0.35, 1, -r * Math.sin(a) * 0.35).normalize();
+          nor.push(n.x, n.y, n.z);
+          col.push(1, 1, 1);
+          v++;
+        }
+        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       }
-      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
     ranges.push([start, v - start]);
   }
+
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
@@ -326,78 +357,62 @@ export function buildValve(env) {
   return { geometry: g, ranges, segs };
 }
 
-/** Юбка — конический пояс под горловиной, посегментно окрашиваемый. */
-export function buildSkirt(env) {
-  const { dims: d, gores: N } = env;
-  const rTop = d.prof[0][1] * d.R;
-  const h = d.H * 0.05;          // огнестойкий пояс ≈ 1 м на оболочке 20 м
-  const rBot = rTop * 0.93;
-  const pos = [], nor = [], col = [], idx = [];
-  const ranges = [];
-  let v = 0;
-  const per = 3;
-  for (let s = 0; s < N; s++) {
-    const a0 = (s / N) * Math.PI * 2;
-    const a1 = ((s + 1) / N) * Math.PI * 2;
-    const start = v;
-    for (let k = 0; k < per; k++) {
-      const t0 = k / per, t1 = (k + 1) / per;
-      const base = v;
-      for (const [a, t] of [[a0, t0], [a1, t0], [a1, t1], [a0, t1]]) {
-        const r = rTop + (rBot - rTop) * t;
-        pos.push(r * Math.cos(a), -h * t, r * Math.sin(a));
-        const n = new THREE.Vector3(Math.cos(a), 0.25, Math.sin(a)).normalize();
-        nor.push(n.x, n.y, n.z);
-        col.push(1, 1, 1);
-        v++;
-      }
-      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    }
-    ranges.push([start, v - start]);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(idx);
-  return { geometry: g, ranges, rBot, h };
+/** Габариты подвески: гондола из каталога, рама и стойки типовые. */
+export function rigSpec(env) {
+  const d = env.dims;
+  const b = (env.model && env.model.basket) || { w: 1.6, d: 1.05, label: '160×105 см' };
+  const yFrame = -d.H * 0.125;                 // верх рамы горелки
+  const yBurnerTop = yFrame + BURNER_H;
+  const yRim = yFrame - UPRIGHT_H;
+  const yFloor = yRim - BASKET_H;
+  return {
+    b, yFrame, yBurnerTop, yRim, yFloor,
+    ux: b.w / 2 - 0.1,
+    uz: b.d / 2 - 0.1,
+    mouthR: d.prof[0][1] * d.R,
+  };
 }
 
 /**
- * Воздухозаборник — не кольцо, а фартук: дуга примерно на полокружности,
- * собранная из клиньев и подшитая к низу юбки. Ловит ветер при наполнении.
+ * Воздухозаборник (он же юбка) — фартук от горловины оболочки вниз к точкам
+ * крепления у стоек рамы. Занимает полокружности со стороны широкой грани
+ * гондолы, собран из клиньев и красится посегментно.
  */
 export const SCOOP_SEGS = 5;
-export const SCOOP_ARC = Math.PI;        // охват дуги, рад
-export const SCOOP_START = Math.PI * 0.5; // середина фартука смотрит на −X
 
-export function buildScoop(env, skirt) {
-  const d = env.dims;
-  const rTop = skirt.rBot;
-  const yTop = -skirt.h;
-  const drop = d.H * 0.118;              // длина фартука
-  const flare = 1.14;                    // к низу слегка расходится
-  const step = SCOOP_ARC / SCOOP_SEGS;
-  const rows = 3;
-
+export function buildScoop(env, rig) {
+  const { ux, uz, yFrame, mouthR } = rig;
+  const rows = 4;
+  const zAttach = -uz - 0.08;
   const pos = [], nor = [], col = [], idx = [];
   const ranges = [];
   let v = 0;
 
-  for (let s = 0; s < SCOOP_SEGS; s++) {
-    const a0 = SCOOP_START + s * step;
-    const a1 = a0 + step;
+  // u = 0..1 вдоль дуги от -X через -Z к +X — это и есть широкая сторона гондолы.
+  const point = (u, t) => {
+    const a = Math.PI + u * Math.PI;
+    const tx = mouthR * Math.cos(a), tz = mouthR * Math.sin(a);
+    const bx = lerp(-ux, ux, u), bz = zAttach;
+    const bulge = 1 + 0.1 * Math.sin(Math.PI * t) * (1 - Math.abs(2 * u - 1));
+    return new THREE.Vector3(
+      lerp(tx, bx, t) * bulge,
+      lerp(0, yFrame, t),
+      lerp(tz, bz, t) * bulge,
+    );
+  };
+
+  for (let sgm = 0; sgm < SCOOP_SEGS; sgm++) {
+    const u0 = sgm / SCOOP_SEGS, u1 = (sgm + 1) / SCOOP_SEGS;
     const start = v;
     for (let k = 0; k < rows; k++) {
       const t0 = k / rows, t1 = (k + 1) / rows;
       const base = v;
-      for (const [a, t] of [[a0, t0], [a1, t0], [a1, t1], [a0, t1]]) {
-        // Клин слегка провисает наружу и сужается к низу по краям дуги.
-        const edge = Math.abs((a - SCOOP_START) / SCOOP_ARC - 0.5) * 2; // 0 в центре, 1 по краям
-        const r = rTop * (1 + (flare - 1) * t) * (1 - 0.06 * t * edge);
-        const y = yTop - drop * t * (1 - 0.35 * edge * edge);
-        pos.push(r * Math.cos(a), y, r * Math.sin(a));
-        const n = new THREE.Vector3(Math.cos(a), 0.2, Math.sin(a)).normalize();
+      const quad = [[u0, t0], [u1, t0], [u1, t1], [u0, t1]];
+      const ps = quad.map(([u, t]) => point(u, t));
+      const n = new THREE.Vector3()
+        .crossVectors(ps[1].clone().sub(ps[0]), ps[3].clone().sub(ps[0])).normalize();
+      for (const p of ps) {
+        pos.push(p.x, p.y, p.z);
         nor.push(n.x, n.y, n.z);
         col.push(1, 1, 1);
         v++;
@@ -412,7 +427,19 @@ export function buildScoop(env, skirt) {
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
-  return { geometry: g, ranges, segs: SCOOP_SEGS, rows, drop, rTop, yTop };
+  return { geometry: g, ranges, segs: SCOOP_SEGS };
+}
+
+/**
+ * Какой клин фартука приходится на этот клин оболочки. Нужно, чтобы нижний
+ * ряд полотнищ шёл той же тканью, что и воздухозаборник.
+ */
+export function scoopSegForGore(g, gores) {
+  const a = ((g + 0.5) / gores) * Math.PI * 2;
+  let da = a - Math.PI;                        // 0..PI внутри дуги фартука
+  if (da < 0) da += Math.PI * 2;
+  if (da > Math.PI) return da > Math.PI * 1.5 ? 0 : SCOOP_SEGS - 1;
+  return Math.min(SCOOP_SEGS - 1, Math.floor((da / Math.PI) * SCOOP_SEGS));
 }
 
 /** Контур модели для карточки каталога: силуэт + сетка клиньев и рядов. */
@@ -421,9 +448,7 @@ export function silhouette(model, W = 120, H = 156) {
   const bounds = rowBoundaries(d);
   const pad = 6;
   const hBody = H - pad * 2 - 16;
-  const sx = (W / 2 - pad) / d.R;
-  const sy = hBody / d.H;
-  const s = Math.min(sx, sy);
+  const s = Math.min((W / 2 - pad) / d.R, hBody / d.H);
   const cx = W / 2;
   const yb = H - pad - 16;
   const X = (r) => cx + r * s;
@@ -433,25 +458,21 @@ export function silhouette(model, W = 120, H = 156) {
   const left = [...d.prof].reverse().map(([y, r]) => `${X(-r * d.R).toFixed(1)},${Y(y * d.H).toFixed(1)}`);
   const outline = `M${right.join('L')}L${left.join('L')}Z`;
 
-  // Меридианы: эллиптические дуги, имитирующие клинья.
   const mer = [];
   const half = Math.max(2, Math.round(d.gores / 4));
   for (let k = 1; k <= half; k++) {
-    const f = k / (half + 0.25);
-    const pts = d.prof.map(([y, r]) => `${X(r * d.R * f).toFixed(1)},${Y(y * d.H).toFixed(1)}`);
-    mer.push(`M${pts.join('L')}`);
-    const pts2 = d.prof.map(([y, r]) => `${X(-r * d.R * f).toFixed(1)},${Y(y * d.H).toFixed(1)}`);
-    mer.push(`M${pts2.join('L')}`);
+    const fr = k / (half + 0.25);
+    mer.push(`M${d.prof.map(([y, r]) => `${X(r * d.R * fr).toFixed(1)},${Y(y * d.H).toFixed(1)}`).join('L')}`);
+    mer.push(`M${d.prof.map(([y, r]) => `${X(-r * d.R * fr).toFixed(1)},${Y(y * d.H).toFixed(1)}`).join('L')}`);
   }
 
-  // Пояса рядов.
   const rings = bounds.slice(1, -1).map((b) =>
     `M${X(-b.r).toFixed(1)},${Y(b.y).toFixed(1)}L${X(b.r).toFixed(1)},${Y(b.y).toFixed(1)}`);
 
-  const basketW = Math.max(6, d.D * s * 0.09);
+  const bw = Math.max(5, (model.basket ? model.basket.w : 1.6) * s);
   const basket =
-    `M${(cx - basketW).toFixed(1)},${(yb + 5).toFixed(1)}` +
-    `h${(basketW * 2).toFixed(1)}v10h${(-basketW * 2).toFixed(1)}z`;
+    `M${(cx - bw / 2).toFixed(1)},${(yb + 6).toFixed(1)}` +
+    `h${bw.toFixed(1)}v9h${(-bw).toFixed(1)}z`;
 
   return { W, H, outline, meridians: mer.join(''), rings: rings.join(''), basket, dims: d };
 }

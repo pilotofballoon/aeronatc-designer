@@ -3,13 +3,15 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import {
-  buildEnvelope, buildSeams, buildTapes, buildValve, buildSkirt, buildScoop, unwrap,
+  buildEnvelope, buildSeams, buildTapes, buildValve, buildScoop, unwrap,
+  rigSpec, scoopSegForGore, BASKET_H, UPRIGHT_H, BURNER_H, PILOT_H,
 } from './geometry.js';
 import { getModel, hexOf } from './data.js';
 import { state, mark, commit } from './state.js';
+import { drawBackdrop } from './backdrop.js';
 
 let renderer, scene, camera, controls, raycaster;
-let group, envMesh, seamLines, tapeMesh, valveMesh, skirtMesh, scoopMesh, rig;
+let group, envMesh, seamLines, tapeMesh, valveMesh, scoopMesh, rig;
 let savedView = null;
 let env = null;
 let onPaint = null;
@@ -60,15 +62,6 @@ export function init(canvas, opts = {}) {
 // ведёт себя по-разному на разных GPU, поэтому фон делаем средствами CSS,
 // а при выгрузке PNG подкладываем ту же заливку под кадр.
 let skyOn = false;
-
-export const SKY_STOPS = [
-  [0.00, '#12467f'],
-  [0.26, '#2f7cbe'],
-  [0.48, '#7bb4e0'],
-  [0.66, '#bcdcf1'],
-  [0.82, '#e8f2f8'],
-  [1.00, '#f6f7f3'],
-];
 
 export function setBackground(kind) {
   skyOn = kind === 'sky';
@@ -126,21 +119,17 @@ export function rebuild() {
   valveMesh.userData = { kind: 'valve', ranges: v.ranges, segs: v.segs };
   group.add(valveMesh);
 
-  const s = buildSkirt(env);
-  skirtMesh = new THREE.Mesh(s.geometry, new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.8, side: THREE.DoubleSide,
-  }));
-  skirtMesh.userData = { kind: 'skirt', ranges: s.ranges };
-  group.add(skirtMesh);
+  const spec = rigSpec(env);
+  env.rig = spec;
 
-  const sc = buildScoop(env, s);
+  const sc = buildScoop(env, spec);
   scoopMesh = new THREE.Mesh(sc.geometry, new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 0.82, side: THREE.DoubleSide,
   }));
   scoopMesh.userData = { kind: 'scoop', ranges: sc.ranges };
   group.add(scoopMesh);
 
-  buildBasketRig(s);
+  buildBasketRig(spec);
   applyColors();
   applyGloss();
   frameCamera();
@@ -150,11 +139,6 @@ export function rebuild() {
 // ─── Гондола, горелка, пилот, стропы ──────────────────────────────────────────
 // Габариты плетёной гондолы берутся из каталога АэроНаТЦ (110×105 … 192×136 см),
 // поэтому корзина меняет размер вместе с моделью и задаёт честный масштаб.
-
-const BASKET_H = 1.15;    // высота плетения, м
-const UPRIGHT_H = 1.05;   // стойки рамы горелки
-const BURNER_H = 0.32;
-const PILOT_H = 1.75;
 
 function roundedRect(w, d, r) {
   const s = new THREE.Shape();
@@ -228,14 +212,8 @@ function pilotSprite() {
   return sp;
 }
 
-function buildBasketRig(skirt) {
-  const d = env.dims;
-  const model = env.model;
-  const b = model.basket || { w: 1.6, d: 1.05 };
-
-  const yBurnerTop = -skirt.h - d.H * 0.105;
-  const yRim = yBurnerTop - BURNER_H - UPRIGHT_H;
-  const yFloor = yRim - BASKET_H;
+function buildBasketRig(spec) {
+  const { b, yFrame, yRim, yFloor, ux, uz, mouthR } = spec;
 
   rig = new THREE.Group();
 
@@ -250,7 +228,6 @@ function buildBasketRig(skirt) {
   rig.add(prism(b.w * 1.02, b.d * 1.02, 0.07, yFloor, leather));
 
   // Стойки рамы горелки по углам и верхняя рамка.
-  const ux = b.w / 2 - 0.1, uz = b.d / 2 - 0.1;
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       const up = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, UPRIGHT_H, 8), steel);
@@ -258,47 +235,55 @@ function buildBasketRig(skirt) {
       rig.add(up);
     }
   }
-  const frameTop = prism(b.w * 0.72, b.d * 0.72, 0.06, yRim + UPRIGHT_H, steel);
-  rig.add(frameTop);
+  rig.add(prism(b.w * 0.72, b.d * 0.72, 0.06, yFrame, steel));
 
-  // Блок горелки и сопло.
-  const burner = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, BURNER_H, 12), brass);
-  burner.position.y = yRim + UPRIGHT_H + BURNER_H / 2;
+  const burner = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, BURNER_H, 14), brass);
+  burner.position.y = yFrame + BURNER_H / 2;
   rig.add(burner);
 
   // Топливные баллоны по углам внутри корзины.
   for (const sx of [-1, 1]) {
     const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, BASKET_H * 0.8, 12), steel);
-    cyl.position.set(sx * (b.w / 2 - 0.24), yFloor + BASKET_H * 0.42, -(b.d / 2 - 0.24));
+    cyl.position.set(sx * (b.w / 2 - 0.24), yFloor + BASKET_H * 0.42, b.d / 2 - 0.24);
     rig.add(cyl);
   }
 
   const pilot = pilotSprite();
-  pilot.position.set(b.w * 0.14, yFloor + PILOT_H / 2 + 0.05, b.d * 0.1);
+  pilot.position.set(-b.w * 0.2, yFloor + PILOT_H / 2 + 0.05, b.d * 0.05);
   rig.add(pilot);
 
-  // Стропы от рамы горелки к низу юбки.
+  // От каждой стойки к оболочке идут три троса.
   const pts = [];
-  const N = Math.min(24, env.gores);
-  for (let i = 0; i < N; i++) {
-    const a = (i / N) * Math.PI * 2;
-    const rx = Math.cos(a) * skirt.rBot, rz = Math.sin(a) * skirt.rBot;
-    const cx = Math.sign(Math.cos(a) || 1) * ux, cz = Math.sign(Math.sin(a) || 1) * uz;
-    pts.push(rx, -skirt.h, rz, cx, yRim + UPRIGHT_H, cz);
+  const SPREAD = THREE.MathUtils.degToRad(26);
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const cx = sx * ux, cz = sz * uz;
+      const base = Math.atan2(cz, cx);
+      for (const k of [-1, 0, 1]) {
+        const a = base + k * SPREAD;
+        pts.push(cx, yFrame, cz, mouthR * Math.cos(a), 0, mouthR * Math.sin(a));
+      }
+    }
   }
   const cg = new THREE.BufferGeometry();
   cg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   rig.add(new THREE.LineSegments(cg, new THREE.LineBasicMaterial({
-    color: 0x3a4250, transparent: true, opacity: 0.5,
+    color: 0x2f3946, transparent: true, opacity: 0.65,
   })));
 
-  rig.userData = { yFloor, yRim, yBurnerTop, basket: b, pilot };
+  rig.userData = { yFloor, yRim, yFrame, basket: b, pilot };
   group.add(rig);
 }
 
 /** Перекрасить все вершины по карте цветов. */
 export function applyColors() {
   if (!env) return;
+  // Нижний ряд полотнищ идёт той же тканью, что и воздухозаборник.
+  if (state.linkBottom) {
+    for (let g = 0; g < state.gores; g++) {
+      state.panels[g] = state.scoop[scoopSegForGore(g, state.gores)];
+    }
+  }
   const attr = env.geometry.getAttribute('color');
   const arr = attr.array;
   for (let r = 0; r < state.rows; r++) {
@@ -315,7 +300,6 @@ export function applyColors() {
   attr.needsUpdate = true;
 
   paintRanges(valveMesh, state.valve);
-  paintRanges(skirtMesh, state.skirt);
   paintRanges(scoopMesh, state.scoop);
 
   tapeMesh.visible = state.tapes;
@@ -341,7 +325,6 @@ export function applyGloss() {
   const r = 0.95 - state.gloss * 0.72;
   envMesh.material.roughness = r;
   valveMesh.material.roughness = r + 0.04;
-  skirtMesh.material.roughness = r + 0.06;
   scoopMesh.material.roughness = r + 0.08;
 }
 
@@ -355,7 +338,7 @@ function onPointerDown(ev) {
   pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
 
-  const targets = [envMesh, valveMesh, skirtMesh, scoopMesh].filter(Boolean);
+  const targets = [envMesh, valveMesh, scoopMesh].filter(Boolean);
   const hits = raycaster.intersectObjects(targets, false);
   if (!hits.length) return;
 
@@ -378,15 +361,17 @@ function paintHit(kind, faceIndex) {
     const panel = env.triPanel[faceIndex];
     const g = panel % state.gores;
     const r = Math.floor(panel / state.gores);
-    paintPanel(g, r, code);
+    if (state.linkBottom && r === 0 && state.paintMode !== 'all') {
+      // Нижний ряд кроится из ткани воздухозаборника — красим сам фартук.
+      state.scoop[scoopSegForGore(g, state.gores)] = code;
+    } else {
+      paintPanel(g, r, code);
+      if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
+    }
   } else if (kind === 'valve') {
     const seg = Math.floor(faceIndex / 6);
     if (state.paintMode === 'all') state.valve = state.valve.map(() => code);
     else state.valve[seg % state.valve.length] = code;
-  } else if (kind === 'skirt') {
-    const seg = Math.floor(faceIndex / 6);
-    if (state.paintMode === 'all') state.skirt = state.skirt.map(() => code);
-    else state.skirt[seg % state.skirt.length] = code;
   } else if (kind === 'scoop') {
     const seg = Math.floor(faceIndex / 6);
     if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
@@ -493,13 +478,13 @@ export function snapshotPNG(width = 1600) {
   renderer.render(scene, camera);
   let url;
   if (skyOn) {
-    // Канвас прозрачный, поэтому кадр кладём поверх заливки неба.
+    // Канвас прозрачный, поэтому кадр кладём поверх картинки фона.
     const out = document.createElement('canvas');
     out.width = el.width; out.height = el.height;
     const g = out.getContext('2d');
-    const grad = g.createLinearGradient(0, 0, 0, out.height);
-    for (const [p, c] of SKY_STOPS) grad.addColorStop(p, c);
-    g.fillStyle = grad; g.fillRect(0, 0, out.width, out.height);
+    if (!drawBackdrop(g, out.width, out.height)) {
+      g.fillStyle = '#bfdcef'; g.fillRect(0, 0, out.width, out.height);
+    }
     g.drawImage(el, 0, 0);
     url = out.toDataURL('image/png');
   } else {

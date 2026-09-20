@@ -20,8 +20,8 @@ export const state = {
   valveSegs: 12,
   panels: [],
   valve: [],
-  skirt: [],
   scoop: [],
+  linkBottom: true,      // нижний ряд кроится из ткани воздухозаборника
   mouth: 'P17',          // устарело: осталось для чтения старых проектов
   active: 'S06',
   secondary: 'S05',
@@ -67,8 +67,6 @@ export function applyModel(modelId, keepColors = true) {
 
   const oldValve = state.valve;
   state.valve = fill(state.valveSegs, oldValve[0] || DEFAULT_COLOR);
-  const oldSkirt = state.skirt;
-  state.skirt = fill(state.gores, oldSkirt[0] || 'S03');
   const oldScoop = state.scoop;
   state.scoop = fill(SCOOP_SEGS, oldScoop[0] || state.mouth || 'P17');
 }
@@ -80,7 +78,7 @@ export const setPanelRaw = (g, r, code) => { state.panels[r * state.gores + g] =
 function snapshot() {
   return JSON.stringify({
     modelId: state.modelId, panels: state.panels, valve: state.valve,
-    skirt: state.skirt, scoop: state.scoop, tapes: state.tapes, tapeColor: state.tapeColor,
+    scoop: state.scoop, tapes: state.tapes, tapeColor: state.tapeColor,
   });
 }
 
@@ -104,7 +102,6 @@ function restore(raw) {
   if (s.modelId !== state.modelId) applyModel(s.modelId, false);
   state.panels = s.panels;
   state.valve = s.valve;
-  state.skirt = s.skirt;
   state.scoop = s.scoop;
   state.tapes = s.tapes;
   state.tapeColor = s.tapeColor;
@@ -137,7 +134,7 @@ export function serialize() {
     app: 'aeronatc-designer', version: 1, saved: new Date().toISOString(),
     project: state.project, customer: state.customer,
     modelId: state.modelId, gores: state.gores, rows: state.rows,
-    panels: state.panels, valve: state.valve, skirt: state.skirt, scoop: state.scoop,
+    panels: state.panels, valve: state.valve, scoop: state.scoop, linkBottom: state.linkBottom,
     tapes: state.tapes, tapeColor: state.tapeColor, gloss: state.gloss,
   };
 }
@@ -149,12 +146,12 @@ export function load(data) {
     state.panels = data.panels;
   }
   if (Array.isArray(data.valve) && data.valve.length === state.valveSegs) state.valve = data.valve;
-  if (Array.isArray(data.skirt) && data.skirt.length === state.gores) state.skirt = data.skirt;
   if (Array.isArray(data.scoop) && data.scoop.length === SCOOP_SEGS) state.scoop = data.scoop;
   else if (data.mouth) state.scoop = fill(SCOOP_SEGS, data.mouth); // проект версии 1
   state.tapes = !!data.tapes;
   if (data.tapeColor) state.tapeColor = data.tapeColor;
   if (typeof data.gloss === 'number') state.gloss = data.gloss;
+  if (typeof data.linkBottom === 'boolean') state.linkBottom = data.linkBottom;
   if (data.project) state.project = data.project;
   if (data.customer) state.customer = data.customer;
   history = []; future = [];
@@ -249,7 +246,6 @@ export function spec(env) {
     for (let g = 0; g < state.gores; g++) add(state.panels[r * state.gores + g], 'оболочка', area);
   }
   state.valve.forEach((c) => add(c, 'клапан', 0));
-  state.skirt.forEach((c) => add(c, 'юбка', 0));
   state.scoop.forEach((c) => add(c, 'воздухозаборник', 0));
   return [...counts.values()].sort((a, b) => b.panels - a.panels);
 }

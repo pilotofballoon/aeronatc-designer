@@ -7,6 +7,7 @@ import {
   state, applyModel, restoreSaved, subscribe, undo, redo, canUndo, canRedo, touch, load,
 } from './state.js';
 import { getModel } from './data.js';
+import { backdropURL, backdropImage } from './backdrop.js';
 import {
   download, exportProject, exportCSV, printSheet, fileBase,
 } from './exporters.js';
@@ -105,6 +106,11 @@ class App {
   applySky(force) {
     const on = force || this.sky;
     scene.setBackground(on ? 'sky' : null);
+    if (on && !this.backdropSet) {
+      backdropImage();                                   // прогрев для экспорта
+      this.stage.style.backgroundImage = `url(${backdropURL()})`;
+      this.backdropSet = true;
+    }
     this.stage.classList.toggle('sky', !!on);
   }
 
