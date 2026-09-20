@@ -152,8 +152,8 @@ button { font: inherit; color: inherit; }
 
 .panel-tabs { display: flex; gap: 2px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .ptab {
-  flex: 1; padding: 7px 4px; border: 0; border-radius: 9px; background: transparent;
-  color: var(--ink-2); cursor: pointer; font-size: 12px; white-space: nowrap;
+  flex: 1; padding: 7px 2px; border: 0; border-radius: 9px; background: transparent;
+  color: var(--ink-2); cursor: pointer; font-size: 11.5px; white-space: nowrap;
 }
 .ptab:hover { background: var(--surface-2); }
 .ptab.is-active { background: var(--brand); color: #fff; font-weight: 500; }
@@ -373,3 +373,38 @@ button { font: inherit; color: inherit; }
   .cats { flex-wrap: wrap; }
   .cat { flex: 1 1 42%; }
 }
+
+/* ── Элементы дизайна ──────────────────────────────────────────────────── */
+.dlist { display: flex; flex-direction: column; gap: 4px; }
+.ditem {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+  cursor: pointer; text-align: left; width: 100%;
+}
+.ditem:hover { border-color: var(--ink-3); }
+.ditem.is-active { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 9%, transparent); }
+.ditem .thumb {
+  width: 26px; height: 26px; flex: none; border-radius: 6px; overflow: hidden;
+  background: var(--surface-2); display: grid; place-items: center;
+  font-size: 10px; color: var(--ink-3);
+}
+.ditem .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ditem .name {
+  flex: 1; min-width: 0; font-size: 12px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.ditem .ops { display: flex; gap: 2px; }
+.ditem .ops button {
+  width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--ink-3); cursor: pointer; font-size: 13px; line-height: 1;
+}
+.ditem .ops button:hover { background: var(--surface-2); color: var(--ink); }
+.dempty {
+  padding: 14px 12px; border: 1px dashed var(--line); border-radius: 11px;
+  font-size: 12px; color: var(--ink-3); text-align: center;
+}
+.field textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--surface-2); color: var(--ink); font: inherit; resize: vertical;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

@@ -4,7 +4,10 @@ import {
   FABRICS, FABRIC_ORDER, codeOf, colorByCode, hexOf, MEMO, CONTACTS,
   CATEGORIES, CATEGORY_ORDER, modelsOf, getModel,
 } from './data.js';
-import { state, PRESETS, applyPreset, mark, commit, touch, spec } from './state.js';
+import {
+  state, PRESETS, applyPreset, mark, commit, touch, spec,
+  addText, addImage, selectedDecal, removeDecal, reorderDecal,
+} from './state.js';
 import { silhouette } from './geometry.js';
 
 const el = (html) => {
@@ -38,6 +41,7 @@ export class UI {
       state.panelTab = b.dataset.tab;
       this.renderTabs();
       this.renderBody();
+      this.app.syncDesignMode();
     });
   }
 
@@ -74,12 +78,13 @@ export class UI {
     </div>`;
   }
 
-  swatchesHTML() {
+  swatchesHTML(activeCode) {
+    const current = activeCode || state.active;
     return FABRIC_ORDER.map((fid) => {
       const f = FABRICS[fid];
       const sw = f.colors.map((c) => {
         const code = codeOf(fid, c.n);
-        return `<button class="sw${code === state.active ? ' is-active' : ''}"
+        return `<button class="sw${code === current ? ' is-active' : ''}"
           style="background:${c.hex}" data-code="${code}"
           title="${code} · ${esc(c.ru)} / ${esc(c.en)}"></button>`;
       }).join('');
@@ -103,6 +108,7 @@ export class UI {
   renderBody() {
     const tab = state.panelTab;
     if (tab === 'color') this.renderColor();
+    else if (tab === 'design') this.renderDesign();
     else if (tab === 'valve') this.renderValve();
     else if (tab === 'fabric') this.renderFabric();
     else if (tab === 'memo') this.renderMemo();
@@ -228,6 +234,177 @@ export class UI {
       state.valve = state.valve.map(() => 'S05');
       state.scoop = state.scoop.map(() => 'P17');
       commit('reset'); app.refreshAll();
+    });
+  }
+
+  // ── Дизайн: текст и изображения на оболочке ──────────────────────────────
+  renderDesign() {
+    const d = selectedDecal();
+    const list = state.decals.length
+      ? state.decals.map((it) => `
+        <div class="ditem${it.id === state.selected ? ' is-active' : ''}" data-id="${it.id}">
+          <span class="thumb">${it.type === 'image' ? `<img src="${it.src}" alt="">` : 'Aa'}</span>
+          <span class="name">${esc(it.type === 'text' ? it.text : 'изображение')}</span>
+          <span class="ops">
+            <button data-op="up" title="Выше">&uarr;</button>
+            <button data-op="down" title="Ниже">&darr;</button>
+            <button data-op="del" title="Удалить">&times;</button>
+          </span>
+        </div>`).join('')
+      : '<div class="dempty">Пока пусто. Добавьте текст или изображение — и перетащите прямо по оболочке.</div>';
+
+    this.body.innerHTML = `
+      <div class="section rows">
+        <h4>Добавить</h4>
+        <div class="grid2">
+          <button class="btn" id="addText">Текст</button>
+          <button class="btn" id="addImg">Изображение</button>
+        </div>
+        <input type="file" id="fileImg" accept="image/png,image/jpeg,image/webp" hidden>
+      </div>
+
+      <div class="section">
+        <h4>Элементы · сверху вниз по слоям</h4>
+        <div class="dlist" id="dlist">${list}</div>
+        <p class="hint">Выберите элемент и тяните его прямо по 3D-модели —
+          он ляжет по поверхности там, где отпустите.</p>
+      </div>
+
+      ${d ? this.decalProps(d) : ''}`;
+
+    const app = this.app;
+    this.body.querySelector('#addText').addEventListener('click', () => {
+      mark(); addText(); commit('decal-add'); this.renderDesign(); app.refreshAll();
+    });
+
+    const file = this.body.querySelector('#fileImg');
+    this.body.querySelector('#addImg').addEventListener('click', () => file.click());
+    file.addEventListener('change', () => {
+      const f = file.files[0];
+      if (!f) return;
+      if (f.size > 4 * 1024 * 1024) { alert('Файл больше 4 МБ — возьмите полегче.'); return; }
+      const rd = new FileReader();
+      rd.onload = () => {
+        mark(); addImage(rd.result); commit('decal-add');
+        this.renderDesign(); app.refreshAll();
+      };
+      rd.readAsDataURL(f);
+      file.value = '';
+    });
+
+    this.body.querySelector('#dlist').addEventListener('click', (e) => {
+      const row = e.target.closest('.ditem');
+      if (!row) return;
+      const op = e.target.closest('[data-op]');
+      if (op) {
+        mark();
+        if (op.dataset.op === 'del') removeDecal(row.dataset.id);
+        else reorderDecal(row.dataset.id, op.dataset.op === 'up' ? -1 : 1);
+        commit('decal-order');
+      } else {
+        state.selected = row.dataset.id;
+        touch('select');
+      }
+      this.renderDesign();
+      app.refreshAll();
+    });
+
+    if (d) this.bindDecalProps(d);
+  }
+
+  decalProps(d) {
+    const num = (id, label, min, max, val, suffix) => `
+      <div class="section" style="margin-bottom:12px">
+        <h4>${label}</h4>
+        <div class="slider-row">
+          <input type="range" id="${id}" min="${min}" max="${max}" step="1" value="${val}">
+          <output id="${id}Out">${val}${suffix}</output>
+        </div>
+      </div>`;
+
+    return `
+      ${d.type === 'text' ? `
+      <div class="section">
+        <h4>Текст</h4>
+        <label class="field"><textarea id="dText" rows="2">${esc(d.text)}</textarea></label>
+        <label class="switch" style="margin-bottom:8px">
+          <input type="checkbox" id="dBold" ${d.bold ? 'checked' : ''}> Жирный</label>
+        <label class="switch">
+          <input type="checkbox" id="dOutline" ${d.outline ? 'checked' : ''}> Обводка</label>
+      </div>` : ''}
+
+      ${num('dSize', 'Размер', 1, 60, Math.round(d.size * 100), '%')}
+      ${num('dRot', 'Поворот', -180, 180, Math.round(d.rot), '&deg;')}
+      ${num('dOpacity', 'Непрозрачность', 10, 100, Math.round(d.opacity * 100), '%')}
+
+      <div class="section">
+        <h4>Положение</h4>
+        <div class="slider-row">
+          <input type="range" id="dU" min="0" max="100" step="0.5" value="${(d.u * 100).toFixed(1)}">
+          <output>вокруг</output>
+        </div>
+        <div class="slider-row" style="margin-top:6px">
+          <input type="range" id="dV" min="0" max="100" step="0.5" value="${(d.v * 100).toFixed(1)}">
+          <output>высота</output>
+        </div>
+        <p class="hint">Или просто тяните элемент по 3D-модели.</p>
+      </div>
+
+      ${d.type === 'text' ? `
+      <div class="section">
+        <h4>Цвет текста</h4>
+        <div id="dPalette">${this.swatchesHTML(d.color)}</div>
+      </div>` : ''}
+
+      <div class="section rows">
+        <button class="btn block danger" id="dDel">Удалить элемент</button>
+      </div>`;
+  }
+
+  bindDecalProps(d) {
+    const app = this.app;
+    const live = (id, apply, fmt) => {
+      const el = this.body.querySelector('#' + id);
+      if (!el) return;
+      const out = this.body.querySelector('#' + id + 'Out');
+      el.addEventListener('input', () => {
+        apply(Number(el.value));
+        if (out && fmt) out.textContent = fmt(el.value);
+        app.refreshAll();
+      });
+      el.addEventListener('change', () => commit('decal-edit'));
+    };
+
+    live('dSize', (v) => { d.size = v / 100; }, (v) => v + '%');
+    live('dRot', (v) => { d.rot = v; }, (v) => v + '°');
+    live('dOpacity', (v) => { d.opacity = v / 100; }, (v) => v + '%');
+    live('dU', (v) => { d.u = v / 100; });
+    live('dV', (v) => { d.v = v / 100; });
+
+    const text = this.body.querySelector('#dText');
+    if (text) {
+      text.addEventListener('input', () => { d.text = text.value; app.refreshAll(); });
+      text.addEventListener('change', () => { commit('decal-edit'); this.renderDesign(); });
+    }
+    const bold = this.body.querySelector('#dBold');
+    if (bold) bold.addEventListener('change', () => {
+      d.bold = bold.checked; commit('decal-edit'); app.refreshAll();
+    });
+    const outline = this.body.querySelector('#dOutline');
+    if (outline) outline.addEventListener('change', () => {
+      d.outline = outline.checked; commit('decal-edit'); app.refreshAll();
+    });
+
+    const pal = this.body.querySelector('#dPalette');
+    if (pal) {
+      this.bindSwatches(pal, (code) => {
+        d.color = code; commit('decal-edit'); app.refreshAll();
+      });
+    }
+
+    this.body.querySelector('#dDel').addEventListener('click', () => {
+      mark(); removeDecal(d.id); commit('decal-del');
+      this.renderDesign(); app.refreshAll();
     });
   }
 

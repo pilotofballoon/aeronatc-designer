@@ -7,8 +7,9 @@ import {
   rigSpec, scoopSegForGore, BASKET_H, UPRIGHT_H, BURNER_H, PILOT_H,
 } from './geometry.js';
 import { getModel, hexOf } from './data.js';
-import { state, mark, commit } from './state.js';
+import { state, mark, commit, selectedDecal } from './state.js';
 import { drawBackdrop } from './backdrop.js';
+import * as atlas from './atlas.js';
 
 let renderer, scene, camera, controls, raycaster;
 let group, envMesh, seamLines, tapeMesh, valveMesh, scoopMesh, rig;
@@ -55,6 +56,8 @@ export function init(canvas, opts = {}) {
   scene.add(group);
 
   canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerleave', onPointerLeave);
   return { renderer, scene, camera, controls };
 }
 
@@ -91,8 +94,9 @@ export function rebuild() {
   env.unwrapped = unwrap(env);
   env.model = model;
 
+  atlas.bindEnv(env);
   const fabric = new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.78, metalness: 0.0, side: THREE.DoubleSide,
+    map: atlas.getTexture(), roughness: 0.78, metalness: 0.0, side: THREE.DoubleSide,
   });
   envMesh = new THREE.Mesh(env.geometry, fabric);
   envMesh.userData.kind = 'envelope';
@@ -284,20 +288,7 @@ export function applyColors() {
       state.panels[g] = state.scoop[scoopSegForGore(g, state.gores)];
     }
   }
-  const attr = env.geometry.getAttribute('color');
-  const arr = attr.array;
-  for (let r = 0; r < state.rows; r++) {
-    for (let g = 0; g < state.gores; g++) {
-      const range = env.panelRange[r * state.gores + g];
-      if (!range) continue;
-      tmpColor.set(hexOf(state.panels[r * state.gores + g])).convertSRGBToLinear();
-      const [start, count] = range;
-      for (let i = start; i < start + count; i++) {
-        arr[i * 3] = tmpColor.r; arr[i * 3 + 1] = tmpColor.g; arr[i * 3 + 2] = tmpColor.b;
-      }
-    }
-  }
-  attr.needsUpdate = true;
+  atlas.redrawBase(env);
 
   paintRanges(valveMesh, state.valve);
   paintRanges(scoopMesh, state.scoop);
@@ -330,19 +321,72 @@ export function applyGloss() {
 
 export function setSeamsVisible(v) { if (seamLines) seamLines.visible = v; }
 
-// ─── Покраска кликом ──────────────────────────────────────────────────────────
-function onPointerDown(ev) {
-  if (ev.button !== 0) return;
+// ─── Указатель: подсветка, покраска, перетаскивание дизайна ──────────────────
+let designMode = false;
+
+/** В режиме дизайна клик не красит, а ставит и двигает выбранный элемент. */
+export function setDesignMode(on) {
+  designMode = on;
+  if (on) atlas.setHover(null);
+  renderer.domElement.style.cursor = on ? 'move' : 'default';
+}
+
+function hitEnvelope(ev) {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-
   const targets = [envMesh, valveMesh, scoopMesh].filter(Boolean);
   const hits = raycaster.intersectObjects(targets, false);
-  if (!hits.length) return;
+  return hits.length ? hits[0] : null;
+}
 
-  const hit = hits[0];
+function onPointerMove(ev) {
+  if (!env) return;
+  if (designMode) return;
+  const hit = hitEnvelope(ev);
+  if (!hit || hit.object.userData.kind !== 'envelope') { atlas.setHover(null); return; }
+  const panel = env.triPanel[hit.faceIndex];
+  const g = panel % state.gores;
+  const r = Math.floor(panel / state.gores);
+  if (state.linkBottom && r === 0) { atlas.setHover(new Set([panel])); return; }
+  atlas.setHover(affectedPanels(g, r));
+}
+
+function onPointerLeave() { atlas.setHover(null); }
+
+function onPointerDown(ev) {
+  if (ev.button !== 0) return;
+  const hit = hitEnvelope(ev);
+  if (!hit) return;
+
+  if (designMode) {
+    const d = selectedDecal();
+    if (!d || hit.object.userData.kind !== 'envelope' || !hit.uv) return;
+    // Тянем элемент прямо по оболочке: uv точки попадания — его новое место.
+    ev.preventDefault();
+    controls.enabled = false;
+    mark();
+    const move = (e) => {
+      const h = hitEnvelope(e);
+      if (!h || h.object.userData.kind !== 'envelope' || !h.uv) return;
+      d.u = h.uv.x; d.v = h.uv.y;
+      atlas.redrawBase(env);
+      if (onPaint) onPaint();
+    };
+    const up = () => {
+      renderer.domElement.removeEventListener('pointermove', move);
+      renderer.domElement.removeEventListener('pointerup', up);
+      controls.enabled = true;
+      commit('decal-move');
+      if (onPaint) onPaint();
+    };
+    move(ev);
+    renderer.domElement.addEventListener('pointermove', move);
+    renderer.domElement.addEventListener('pointerup', up);
+    return;
+  }
+
   const kind = hit.object.userData.kind;
   const down = { x: ev.clientX, y: ev.clientY };
   // Красим только если это клик, а не вращение камеры.
@@ -354,51 +398,30 @@ function onPointerDown(ev) {
   renderer.domElement.addEventListener('pointerup', up);
 }
 
-function paintHit(kind, faceIndex) {
-  mark();
-  const code = state.active;
-  if (kind === 'envelope') {
-    const panel = env.triPanel[faceIndex];
-    const g = panel % state.gores;
-    const r = Math.floor(panel / state.gores);
-    if (state.linkBottom && r === 0 && state.paintMode !== 'all') {
-      // Нижний ряд кроится из ткани воздухозаборника — красим сам фартук.
-      state.scoop[scoopSegForGore(g, state.gores)] = code;
-    } else {
-      paintPanel(g, r, code);
-      if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
+/** Какие полотнища затронет клик по (g, r) в текущем режиме. */
+export function affectedPanels(g, r, mode = state.paintMode) {
+  const G = state.gores, R = state.rows;
+  const out = new Set();
+  const add = (gg, rr) => out.add(rr * G + gg);
+  switch (mode) {
+    case 'gore': for (let j = 0; j < R; j++) add(g, j); break;
+    case 'row':  for (let i = 0; i < G; i++) add(i, r); break;
+    case 'ring': for (let i = 0; i < G; i += 2) add((g % 2 === 0 ? i : i + 1) % G, r); break;
+    case 'diag': {
+      // Диагональная полоса через всю оболочку: шаг один клин на ряд.
+      const k = g - r;
+      for (let j = 0; j < R; j++) add(((k + j) % G + G) % G, j);
+      break;
     }
-  } else if (kind === 'valve') {
-    const seg = Math.floor(faceIndex / 6);
-    if (state.paintMode === 'all') state.valve = state.valve.map(() => code);
-    else state.valve[seg % state.valve.length] = code;
-  } else if (kind === 'scoop') {
-    const seg = Math.floor(faceIndex / 6);
-    if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
-    else state.scoop[seg % state.scoop.length] = code;
+    case 'all':  for (let j = 0; j < R; j++) for (let i = 0; i < G; i++) add(i, j); break;
+    default:     add(g, r);
   }
-  applyColors();
-  commit('paint');
-  if (onPaint) onPaint();
+  return out;
 }
 
 /** Покрасить с учётом режима: полотнище / клин / ряд / всё. */
 export function paintPanel(g, r, code) {
-  const G = state.gores, R = state.rows;
-  const set = (gg, rr) => { state.panels[rr * G + gg] = code; };
-  switch (state.paintMode) {
-    case 'gore': for (let j = 0; j < R; j++) set(g, j); break;
-    case 'row':  for (let i = 0; i < G; i++) set(i, r); break;
-    case 'ring': for (let i = 0; i < G; i += 2) set((g % 2 === 0 ? i : i + 1) % G, r); break;
-    case 'diag': {
-      // Диагональная полоса через всю оболочку: шаг один клин на ряд.
-      const k = g - r;
-      for (let j = 0; j < R; j++) set(((k + j) % G + G) % G, j);
-      break;
-    }
-    case 'all':  for (let j = 0; j < R; j++) for (let i = 0; i < G; i++) set(i, j); break;
-    default:     set(g, r);
-  }
+  for (const p of affectedPanels(g, r)) state.panels[p] = code;
 }
 
 // ─── Камера и цикл отрисовки ──────────────────────────────────────────────────

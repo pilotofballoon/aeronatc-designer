@@ -34,7 +34,8 @@ export function exportCSV(env) {
     for (let g = 0; g < state.gores; g++) {
       const c = colorByCode(state.panels[r * state.gores + g]);
       if (!c) continue;
-      rows.push([g + 1, r + 1, c.code, c.fabricLabel, `${c.ru} / ${c.en}`, c.hex]);
+      // Номер клина — как в раскладке: слева направо при взгляде снаружи.
+      rows.push([state.gores - g, r + 1, c.code, c.fabricLabel, `${c.ru} / ${c.en}`, c.hex]);
     }
   }
   state.valve.forEach((code, i) => {

@@ -34,7 +34,54 @@ export const state = {
   panelTab: 'color',       // color | design | valve | memo | export
   project: 'Без названия',
   customer: '',
+
+  decals: [],            // текст и изображения на оболочке, первый — верхний слой
+  selected: null,        // id выбранного элемента дизайна
 };
+
+let decalSeq = 1;
+const nextId = () => `d${decalSeq++}`;
+
+export function addText(text = 'АэроНаТЦ') {
+  const d = {
+    id: nextId(), type: 'text', text,
+    u: 0.5, v: 0.5, size: 0.09, rot: 0, opacity: 1,
+    color: 'S11', font: 'Inter, system-ui, sans-serif', bold: true,
+    outline: false, outlineColor: 'S05',
+  };
+  state.decals.unshift(d);
+  state.selected = d.id;
+  return d;
+}
+
+export function addImage(src) {
+  const d = {
+    id: nextId(), type: 'image', src,
+    u: 0.5, v: 0.5, size: 0.18, rot: 0, opacity: 1,
+  };
+  state.decals.unshift(d);
+  state.selected = d.id;
+  return d;
+}
+
+export const decalById = (id) => state.decals.find((d) => d.id === id) || null;
+export const selectedDecal = () => decalById(state.selected);
+
+export function removeDecal(id) {
+  const i = state.decals.findIndex((d) => d.id === id);
+  if (i < 0) return;
+  state.decals.splice(i, 1);
+  if (state.selected === id) state.selected = state.decals.length ? state.decals[0].id : null;
+}
+
+/** Сдвинуть слой: dir = -1 ближе к зрителю, +1 вглубь. */
+export function reorderDecal(id, dir) {
+  const i = state.decals.findIndex((d) => d.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= state.decals.length) return;
+  const [d] = state.decals.splice(i, 1);
+  state.decals.splice(j, 0, d);
+}
 
 function fill(n, c) { return new Array(n).fill(c); }
 
@@ -79,6 +126,7 @@ function snapshot() {
   return JSON.stringify({
     modelId: state.modelId, panels: state.panels, valve: state.valve,
     scoop: state.scoop, tapes: state.tapes, tapeColor: state.tapeColor,
+    decals: state.decals,
   });
 }
 
@@ -103,6 +151,7 @@ function restore(raw) {
   state.panels = s.panels;
   state.valve = s.valve;
   state.scoop = s.scoop;
+  if (s.decals) state.decals = s.decals;
   state.tapes = s.tapes;
   state.tapeColor = s.tapeColor;
 }
@@ -135,6 +184,7 @@ export function serialize() {
     project: state.project, customer: state.customer,
     modelId: state.modelId, gores: state.gores, rows: state.rows,
     panels: state.panels, valve: state.valve, scoop: state.scoop, linkBottom: state.linkBottom,
+    decals: state.decals,
     tapes: state.tapes, tapeColor: state.tapeColor, gloss: state.gloss,
   };
 }
@@ -152,6 +202,13 @@ export function load(data) {
   if (data.tapeColor) state.tapeColor = data.tapeColor;
   if (typeof data.gloss === 'number') state.gloss = data.gloss;
   if (typeof data.linkBottom === 'boolean') state.linkBottom = data.linkBottom;
+  if (Array.isArray(data.decals)) {
+    state.decals = data.decals;
+    for (const d of state.decals) {
+      const n = Number(String(d.id).replace(/\D/g, ''));
+      if (Number.isFinite(n) && n >= decalSeq) decalSeq = n + 1;
+    }
+  }
   if (data.project) state.project = data.project;
   if (data.customer) state.customer = data.customer;
   history = []; future = [];

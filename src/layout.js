@@ -4,8 +4,13 @@
 import { state, mark, commit } from './state.js';
 import { hexOf, getModel, CONTACTS } from './data.js';
 import { paintPanel } from './scene.js';
+import { getCanvas, cellRect } from './atlas.js';
 
 const GAP = 0.18;          // зазор между клиньями, м
+
+// Развёртку кладём так же, как оболочка читается снаружи: клин 1 слева.
+// Индекс клина в геометрии растёт против часовой, поэтому колонка — зеркальна.
+const colOf = (g, N) => N - 1 - g;
 const MARGIN = { l: 46, t: 34, r: 18, b: 26 };
 
 export class LayoutView {
@@ -95,7 +100,7 @@ export class LayoutView {
   cellPoly(g, r) {
     const { u, pitch } = this.metrics;
     const cell = u.cells[r];
-    const cx = g * pitch + u.maxW / 2;
+    const cx = colOf(g, u.gores) * pitch + u.maxW / 2;
     return [
       this.toPx(cx - cell.wBot / 2, cell.yBot),
       this.toPx(cx + cell.wBot / 2, cell.yBot),
@@ -143,6 +148,17 @@ export class LayoutView {
         ctx.closePath();
         ctx.fillStyle = hexOf(state.panels[r * state.gores + g]);
         ctx.fill();
+        // Поверх заливки кладём кусок развёртки — так в раскладку попадают
+        // текст и изображения ровно там же, где они легли на оболочку.
+        ctx.save();
+        ctx.clip();
+        const src = cellRect(g, r);
+        const x0 = Math.min(p[0][0], p[3][0]);
+        const x1 = Math.max(p[1][0], p[2][0]);
+        const y0 = Math.min(p[2][1], p[3][1]);
+        const y1 = Math.max(p[0][1], p[1][1]);
+        ctx.drawImage(getCanvas(), src.x, src.y, src.w, src.h, x0, y0, x1 - x0, y1 - y0);
+        ctx.restore();
         const hot = this.hover && this.hover.g === g && this.hover.r === r;
         ctx.strokeStyle = hot ? '#e8541f' : line;
         ctx.lineWidth = hot ? 2.2 : 0.6;
@@ -155,10 +171,10 @@ export class LayoutView {
     ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'center';
     const { pitch } = this.metrics;
-    for (let g = 0; g < u.gores; g++) {
-      const [x] = this.toPx(g * pitch + u.maxW / 2, 0);
+    for (let c = 0; c < u.gores; c++) {
+      const [x] = this.toPx(c * pitch + u.maxW / 2, 0);
       const [, y] = this.toPx(0, u.goreLen);
-      ctx.fillText(String(g + 1), x, y - 8);
+      ctx.fillText(String(c + 1), x, y - 8);
     }
     ctx.textAlign = 'right';
     for (let r = 0; r < u.rows; r++) {
@@ -194,7 +210,7 @@ export class LayoutView {
     for (let g = 0; g < u.gores; g++) {
       for (let r = 0; r < u.rows; r++) {
         const cell = u.cells[r];
-        const cx = g * (u.maxW + GAP) + u.maxW / 2;
+        const cx = colOf(g, u.gores) * (u.maxW + GAP) + u.maxW / 2;
         const p = [
           px(cx - cell.wBot / 2, cell.yBot), px(cx + cell.wBot / 2, cell.yBot),
           px(cx + cell.wTop / 2, cell.yTop), px(cx - cell.wTop / 2, cell.yTop),
@@ -203,6 +219,14 @@ export class LayoutView {
         for (let i = 1; i < 4; i++) ctx.lineTo(p[i][0], p[i][1]);
         ctx.closePath();
         ctx.fillStyle = hexOf(state.panels[r * state.gores + g]); ctx.fill();
+        ctx.save(); ctx.clip();
+        const srcR = cellRect(g, r);
+        const bx0 = Math.min(p[0][0], p[3][0]);
+        const bx1 = Math.max(p[1][0], p[2][0]);
+        const by0 = Math.min(p[2][1], p[3][1]);
+        const by1 = Math.max(p[0][1], p[1][1]);
+        ctx.drawImage(getCanvas(), srcR.x, srcR.y, srcR.w, srcR.h, bx0, by0, bx1 - bx0, by1 - by0);
+        ctx.restore();
         ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 0.8 * scale; ctx.stroke();
       }
     }
@@ -211,9 +235,9 @@ export class LayoutView {
     ctx.fillStyle = '#333';
     ctx.font = `600 ${Math.round(9 * scale)}px ui-monospace, Menlo, monospace`;
     ctx.textAlign = 'center';
-    for (let g = 0; g < u.gores; g++) {
-      const [x] = px(g * (u.maxW + GAP) + u.maxW / 2, 0);
-      ctx.fillText(String(g + 1), x, y0 - 5 * scale);
+    for (let c = 0; c < u.gores; c++) {
+      const [x] = px(c * (u.maxW + GAP) + u.maxW / 2, 0);
+      ctx.fillText(String(c + 1), x, y0 - 5 * scale);
     }
     ctx.textAlign = 'right';
     for (let r = 0; r < u.rows; r++) {

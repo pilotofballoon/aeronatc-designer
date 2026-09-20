@@ -166,6 +166,7 @@ export function buildEnvelope(model) {
   const pos = new Float32Array(quadCount * 4 * 3);
   const nor = new Float32Array(quadCount * 4 * 3);
   const col = new Float32Array(quadCount * 4 * 3);
+  const uvs = new Float32Array(quadCount * 4 * 2);
   const idx = new Uint32Array(quadCount * 6);
   const triPanel = new Int32Array(quadCount * 2);
   const panelRange = new Array(N * rows);
@@ -213,6 +214,9 @@ export function buildEnvelope(model) {
             const yN = lerp(b0.y, b1.y, Math.min(1, cv + 0.02));
             put(v, surfacePoint(d, bulge, phi, gp, r, y),
                 normalAt(phi, gp, r, y, rN, yN, step * 0.02));
+            // Развёртка: u — по окружности, v — по длине меридиана снизу вверх.
+            uvs[v * 2] = (g + cu) / N;
+            uvs[v * 2 + 1] = (j + cv) / rows;
             v++;
           }
           idx[f++] = base; idx[f++] = base + 1; idx[f++] = base + 2;
@@ -229,6 +233,7 @@ export function buildEnvelope(model) {
   geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geometry.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   geometry.setIndex(new THREE.BufferAttribute(idx, 1));
   geometry.computeBoundingSphere();
 

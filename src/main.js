@@ -39,11 +39,11 @@ class App {
     this.observeSize();
     this.setView('3d');
     scene.frameCamera();
-    setTimeout(() => document.getElementById('stageHint').classList.add('fade'), 7000);
 
     this.ui.renderTabs();
     this.ui.renderModelCard();
     this.ui.renderBody();
+    this.syncDesignMode();
 
     subscribe(() => this.syncHistoryButtons());
     this.syncHistoryButtons();
@@ -70,6 +70,18 @@ class App {
   }
 
   onGloss() { scene.applyGloss(); touch('gloss'); }
+
+  /** Во вкладке «Дизайн» клик по оболочке не красит, а двигает элемент. */
+  syncDesignMode() {
+    scene.setDesignMode(state.panelTab === 'design');
+    const hint = document.getElementById('stageHint');
+    hint.classList.remove('fade');
+    hint.textContent = state.panelTab === 'design'
+      ? 'Выберите элемент справа и тяните его прямо по оболочке'
+      : 'Наведите на оболочку — подсветятся полотнища, которые закрасятся';
+    clearTimeout(this.hintTimer);
+    this.hintTimer = setTimeout(() => hint.classList.add('fade'), 7000);
+  }
 
   setModel(id) {
     applyModel(id, true);
