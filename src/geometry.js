@@ -1,0 +1,420 @@
+// Построение оболочки: профиль меридиана -> сетка полотнищ (клин x ряд) -> BufferGeometry.
+// Модели АэроНаТЦ описаны объёмом и числом клиньев; диаметр, высота и число рядов
+// считаются из профиля, а не задаются вручную.
+
+import * as THREE from 'three';
+
+// Профили меридиана: [y, r], y = 0 у горловины, y = 1 в куполе; r нормирован на 1.
+const PROFILES = {
+  classic: [
+    [0.000, 0.175], [0.030, 0.245], [0.070, 0.345], [0.120, 0.470], [0.180, 0.600],
+    [0.250, 0.720], [0.330, 0.830], [0.420, 0.920], [0.520, 0.980], [0.600, 1.000],
+    [0.680, 0.985], [0.760, 0.935], [0.840, 0.840], [0.900, 0.720], [0.945, 0.585],
+    [0.975, 0.420], [0.993, 0.235], [1.000, 0.000],
+  ],
+  sport: [
+    [0.000, 0.150], [0.040, 0.240], [0.090, 0.350], [0.150, 0.470], [0.220, 0.590],
+    [0.300, 0.700], [0.380, 0.800], [0.470, 0.885], [0.560, 0.945], [0.640, 0.985],
+    [0.710, 1.000], [0.780, 0.975], [0.850, 0.900], [0.900, 0.800], [0.945, 0.640],
+    [0.975, 0.450], [0.993, 0.240], [1.000, 0.000],
+  ],
+  oda: [
+    [0.000, 0.200], [0.040, 0.300], [0.090, 0.430], [0.150, 0.560], [0.220, 0.690],
+    [0.300, 0.800], [0.390, 0.890], [0.480, 0.955], [0.570, 0.990], [0.640, 1.000],
+    [0.720, 0.980], [0.800, 0.920], [0.870, 0.810], [0.920, 0.690], [0.955, 0.550],
+    [0.978, 0.400], [0.994, 0.220], [1.000, 0.000],
+  ],
+  drop: [
+    [0.000, 0.150], [0.035, 0.260], [0.080, 0.400], [0.140, 0.560], [0.210, 0.710],
+    [0.290, 0.840], [0.370, 0.930], [0.450, 0.985], [0.520, 1.000], [0.600, 0.975],
+    [0.680, 0.910], [0.760, 0.810], [0.840, 0.670], [0.900, 0.520], [0.945, 0.370],
+    [0.975, 0.240], [0.993, 0.120], [1.000, 0.000],
+  ],
+  barrel: [
+    [0.000, 0.300], [0.040, 0.420], [0.090, 0.560], [0.150, 0.690], [0.220, 0.800],
+    [0.300, 0.880], [0.380, 0.940], [0.470, 0.975], [0.560, 0.995], [0.650, 1.000],
+    [0.740, 0.985], [0.820, 0.940], [0.880, 0.860], [0.925, 0.740], [0.958, 0.600],
+    [0.980, 0.430], [0.994, 0.230], [1.000, 0.000],
+  ],
+};
+
+// Отношение высоты к диаметру для каждой формы.
+const ASPECT = { classic: 1.06, sport: 1.32, oda: 1.02, drop: 1.18, barrel: 1.12 };
+
+const MERIDIAN_STEPS = 400;      // точность дискретизации профиля
+const TARGET_PANEL_H = 1.45;     // целевая высота полотнища, м (ширина рулона ткани)
+const SUB_U = 4;                 // подразбиение полотнища поперёк клина
+const SUB_V = 2;                 // подразбиение полотнища по высоте
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// Линейная интерполяция профиля с равномерным шагом по y.
+function sampleProfile(shape) {
+  const pts = PROFILES[shape] || PROFILES.classic;
+  const out = [];
+  let k = 0;
+  for (let i = 0; i <= MERIDIAN_STEPS; i++) {
+    const y = i / MERIDIAN_STEPS;
+    while (k < pts.length - 2 && pts[k + 1][0] < y) k++;
+    const [y0, r0] = pts[k];
+    const [y1, r1] = pts[k + 1];
+    const t = y1 === y0 ? 0 : (y - y0) / (y1 - y0);
+    out.push([y, Math.max(0, lerp(r0, r1, t))]);
+  }
+  return out;
+}
+
+// Габариты оболочки из объёма: V = pi * R^2 * H * integral(r^2 dy)
+export function dims(model) {
+  const shape = model.shape || 'classic';
+  const aspect = ASPECT[shape] || 1.06;
+  const prof = sampleProfile(shape);
+
+  let I = 0;
+  for (let i = 0; i < prof.length - 1; i++) {
+    const rm = (prof[i][1] + prof[i + 1][1]) / 2;
+    I += rm * rm * (prof[i + 1][0] - prof[i][0]);
+  }
+
+  const D = Math.cbrt((4 * model.volume) / (Math.PI * aspect * I));
+  const H = aspect * D;
+  const R = D / 2;
+
+  // Длина меридиана (развёрнутого клина).
+  let arc = 0;
+  const cum = [0];
+  for (let i = 0; i < prof.length - 1; i++) {
+    const dr = (prof[i + 1][1] - prof[i][1]) * R;
+    const dy = (prof[i + 1][0] - prof[i][0]) * H;
+    arc += Math.hypot(dr, dy);
+    cum.push(arc);
+  }
+
+  const rows = Math.min(30, Math.max(8, Math.round(arc / TARGET_PANEL_H)));
+  return { shape, aspect, prof, R, D, H, arc, cum, rows, gores: model.gores };
+}
+
+// Границы рядов: равные отрезки по длине меридиана, снизу вверх.
+function rowBoundaries(d) {
+  const { prof, cum, arc, rows, R, H } = d;
+  const res = [];
+  for (let j = 0; j <= rows; j++) {
+    const target = (arc * j) / rows;
+    let i = 0;
+    while (i < cum.length - 2 && cum[i + 1] < target) i++;
+    const seg = cum[i + 1] - cum[i] || 1;
+    const t = (target - cum[i]) / seg;
+    const y = lerp(prof[i][0], prof[i + 1][0], t);
+    const r = lerp(prof[i][1], prof[i + 1][1], t);
+    res.push({ s: target, y: y * H, r: r * R, rn: r });
+  }
+  return res;
+}
+
+// Радиальный «пузырь» доли между швами: у 12-дольных он заметно сильнее.
+function bulgeOf(gores) { return 6.5 / (gores * gores); }
+
+function surfacePoint(d, bulge, phi, gorePhi, r, y) {
+  // gorePhi — положение внутри клина от -0.5 до 0.5
+  const m = 1 + bulge * (1 - 4 * gorePhi * gorePhi);
+  const rr = r * m;
+  return new THREE.Vector3(rr * Math.cos(phi), y, rr * Math.sin(phi));
+}
+
+/**
+ * Геометрия оболочки с индивидуально окрашиваемыми полотнищами.
+ * Возвращает geometry (vertexColors), карту panel -> диапазон вершин и
+ * карту треугольник -> панель для пикинга.
+ */
+export function buildEnvelope(model) {
+  const d = dims(model);
+  const bounds = rowBoundaries(d);
+  const N = d.gores;
+  const rows = d.rows;
+  const bulge = bulgeOf(N);
+  const step = (Math.PI * 2) / N;
+
+  const quadCount = N * rows * SUB_U * SUB_V;
+  const pos = new Float32Array(quadCount * 4 * 3);
+  const nor = new Float32Array(quadCount * 4 * 3);
+  const col = new Float32Array(quadCount * 4 * 3);
+  const idx = new Uint32Array(quadCount * 6);
+  const triPanel = new Int32Array(quadCount * 2);
+  const panelRange = new Array(N * rows);
+
+  let v = 0; // счётчик вершин
+  let f = 0; // счётчик индексов
+  let t = 0; // счётчик треугольников
+
+  const put = (i, p, n) => {
+    pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
+    nor[i * 3] = n.x; nor[i * 3 + 1] = n.y; nor[i * 3 + 2] = n.z;
+  };
+
+  const normalAt = (phi, gp, rj, yj, r1, y1, dphi) => {
+    const p0 = surfacePoint(d, bulge, phi, gp, rj, yj);
+    const pu = surfacePoint(d, bulge, phi + dphi, Math.min(0.5, gp + dphi / step), rj, yj);
+    const pv = surfacePoint(d, bulge, phi, gp, r1, y1);
+    const a = pu.clone().sub(p0);
+    const b = pv.clone().sub(p0);
+    const n = new THREE.Vector3().crossVectors(b, a).normalize();
+    if (n.lengthSq() < 0.5) n.set(Math.cos(phi), 0, Math.sin(phi));
+    // нормаль всегда наружу
+    if (n.x * p0.x + n.z * p0.z < 0 && Math.abs(p0.y) > 1e-6) n.negate();
+    return n;
+  };
+
+  for (let g = 0; g < N; g++) {
+    const phi0 = g * step;
+    for (let j = 0; j < rows; j++) {
+      const b0 = bounds[j];
+      const b1 = bounds[j + 1];
+      const start = v;
+      for (let su = 0; su < SUB_U; su++) {
+        for (let sv = 0; sv < SUB_V; sv++) {
+          const ua = su / SUB_U, ub = (su + 1) / SUB_U;
+          const va = sv / SUB_V, vb = (sv + 1) / SUB_V;
+          const corners = [[ua, va], [ub, va], [ub, vb], [ua, vb]];
+          const base = v;
+          for (const [cu, cv] of corners) {
+            const phi = phi0 + cu * step;
+            const gp = cu - 0.5;
+            const r = lerp(b0.r, b1.r, cv);
+            const y = lerp(b0.y, b1.y, cv);
+            const rN = lerp(b0.r, b1.r, Math.min(1, cv + 0.02));
+            const yN = lerp(b0.y, b1.y, Math.min(1, cv + 0.02));
+            put(v, surfacePoint(d, bulge, phi, gp, r, y),
+                normalAt(phi, gp, r, y, rN, yN, step * 0.02));
+            v++;
+          }
+          idx[f++] = base; idx[f++] = base + 1; idx[f++] = base + 2;
+          idx[f++] = base; idx[f++] = base + 2; idx[f++] = base + 3;
+          triPanel[t++] = j * N + g;
+          triPanel[t++] = j * N + g;
+        }
+      }
+      panelRange[j * N + g] = [start, v - start];
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geometry.setIndex(new THREE.BufferAttribute(idx, 1));
+  geometry.computeBoundingSphere();
+
+  return { geometry, panelRange, triPanel, dims: d, bounds, rows, gores: N, bulge };
+}
+
+// Линии швов: вертикальные по клиньям и горизонтальные по рядам.
+export function buildSeams(env) {
+  const { dims: d, bounds, gores: N, bulge } = env;
+  const step = (Math.PI * 2) / N;
+  const pts = [];
+
+  for (let g = 0; g < N; g++) {
+    const phi = g * step;
+    for (let j = 0; j < bounds.length - 1; j++) {
+      const a = surfacePoint(d, bulge, phi, -0.5, bounds[j].r, bounds[j].y);
+      const b = surfacePoint(d, bulge, phi, -0.5, bounds[j + 1].r, bounds[j + 1].y);
+      pts.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+  }
+  for (let j = 1; j < bounds.length - 1; j++) {
+    const { r, y } = bounds[j];
+    const seg = N * 8;
+    for (let i = 0; i < seg; i++) {
+      const p1 = i / seg * Math.PI * 2, p2 = (i + 1) / seg * Math.PI * 2;
+      const gp1 = ((p1 / step) % 1) - 0.5, gp2 = ((p2 / step) % 1) - 0.5;
+      const a = surfacePoint(d, bulge, p1, gp1, r, y);
+      const b = surfacePoint(d, bulge, p2, gp2, r, y);
+      pts.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  return g;
+}
+
+// Силовые ленты — объёмные полосы поверх вертикальных швов.
+export function buildTapes(env) {
+  const { dims: d, bounds, gores: N, bulge } = env;
+  const step = (Math.PI * 2) / N;
+  const width = d.R * 0.012;
+  const pos = [];
+  const nor = [];
+  const idx = [];
+  let v = 0;
+
+  for (let g = 0; g < N; g++) {
+    const phi = g * step;
+    for (let j = 0; j < bounds.length - 1; j++) {
+      const rows2 = [bounds[j], bounds[j + 1]];
+      const base = v;
+      for (const b of rows2) {
+        for (const side of [-1, 1]) {
+          const dphi = (side * width) / Math.max(b.r, 1e-3);
+          const p = surfacePoint(d, bulge, phi + dphi, -0.5, b.r * 1.004, b.y);
+          pos.push(p.x, p.y, p.z);
+          const n = new THREE.Vector3(p.x, 0, p.z).normalize();
+          nor.push(n.x, 0.15, n.z);
+          v++;
+        }
+      }
+      idx.push(base, base + 1, base + 3, base, base + 3, base + 2);
+    }
+  }
+
+  const g2 = new THREE.BufferGeometry();
+  g2.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g2.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g2.setIndex(idx);
+  return g2;
+}
+
+/**
+ * Парашютный клапан — круг в куполе, разбитый на сектора.
+ * Число секторов вдвое меньше числа клиньев (но не меньше 6).
+ */
+export function valveSpec(env) {
+  const { dims: d, gores } = env;
+  const segs = Math.max(6, Math.round(gores / 2));
+  const rTarget = d.R * 0.26;
+  // Найти высоту, на которой радиус профиля равен rTarget (в куполе).
+  let y = d.H * 0.97;
+  for (let i = d.prof.length - 1; i > 1; i--) {
+    if (d.prof[i][1] * d.R >= rTarget) { y = d.prof[i][0] * d.H; break; }
+  }
+  return { segs, radius: rTarget, y };
+}
+
+export function buildValve(env) {
+  const { segs, radius, y } = valveSpec(env);
+  const pos = [], nor = [], col = [], idx = [];
+  const ranges = [];
+  let v = 0;
+  const dome = radius * 0.16;
+  for (let s = 0; s < segs; s++) {
+    const a0 = (s / segs) * Math.PI * 2;
+    const a1 = ((s + 1) / segs) * Math.PI * 2;
+    const start = v;
+    const steps = 3;
+    for (let k = 0; k < steps; k++) {
+      const t0 = k / steps, t1 = (k + 1) / steps;
+      const base = v;
+      for (const [a, t] of [[a0, t0], [a1, t0], [a1, t1], [a0, t1]]) {
+        const r = radius * t;
+        const yy = y + dome * (1 - t * t) + 0.02;
+        pos.push(r * Math.cos(a), yy, r * Math.sin(a));
+        const n = new THREE.Vector3(r * Math.cos(a) * 0.3, 1, r * Math.sin(a) * 0.3).normalize();
+        nor.push(n.x, n.y, n.z);
+        col.push(1, 1, 1);
+        v++;
+      }
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+    ranges.push([start, v - start]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  return { geometry: g, ranges, segs };
+}
+
+/** Юбка — конический пояс под горловиной, посегментно окрашиваемый. */
+export function buildSkirt(env) {
+  const { dims: d, gores: N } = env;
+  const rTop = d.prof[0][1] * d.R;
+  const h = d.H * 0.075;
+  const rBot = rTop * 0.82;
+  const pos = [], nor = [], col = [], idx = [];
+  const ranges = [];
+  let v = 0;
+  const per = 3;
+  for (let s = 0; s < N; s++) {
+    const a0 = (s / N) * Math.PI * 2;
+    const a1 = ((s + 1) / N) * Math.PI * 2;
+    const start = v;
+    for (let k = 0; k < per; k++) {
+      const t0 = k / per, t1 = (k + 1) / per;
+      const base = v;
+      for (const [a, t] of [[a0, t0], [a1, t0], [a1, t1], [a0, t1]]) {
+        const r = rTop + (rBot - rTop) * t;
+        pos.push(r * Math.cos(a), -h * t, r * Math.sin(a));
+        const n = new THREE.Vector3(Math.cos(a), 0.25, Math.sin(a)).normalize();
+        nor.push(n.x, n.y, n.z);
+        col.push(1, 1, 1);
+        v++;
+      }
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+    ranges.push([start, v - start]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  return { geometry: g, ranges, rBot, h };
+}
+
+/** Контур модели для карточки каталога: силуэт + сетка клиньев и рядов. */
+export function silhouette(model, W = 120, H = 156) {
+  const d = dims(model);
+  const bounds = rowBoundaries(d);
+  const pad = 6;
+  const hBody = H - pad * 2 - 16;
+  const sx = (W / 2 - pad) / d.R;
+  const sy = hBody / d.H;
+  const s = Math.min(sx, sy);
+  const cx = W / 2;
+  const yb = H - pad - 16;
+  const X = (r) => cx + r * s;
+  const Y = (y) => yb - y * s;
+
+  const right = d.prof.map(([y, r]) => `${X(r * d.R).toFixed(1)},${Y(y * d.H).toFixed(1)}`);
+  const left = [...d.prof].reverse().map(([y, r]) => `${X(-r * d.R).toFixed(1)},${Y(y * d.H).toFixed(1)}`);
+  const outline = `M${right.join('L')}L${left.join('L')}Z`;
+
+  // Меридианы: эллиптические дуги, имитирующие клинья.
+  const mer = [];
+  const half = Math.max(2, Math.round(d.gores / 4));
+  for (let k = 1; k <= half; k++) {
+    const f = k / (half + 0.25);
+    const pts = d.prof.map(([y, r]) => `${X(r * d.R * f).toFixed(1)},${Y(y * d.H).toFixed(1)}`);
+    mer.push(`M${pts.join('L')}`);
+    const pts2 = d.prof.map(([y, r]) => `${X(-r * d.R * f).toFixed(1)},${Y(y * d.H).toFixed(1)}`);
+    mer.push(`M${pts2.join('L')}`);
+  }
+
+  // Пояса рядов.
+  const rings = bounds.slice(1, -1).map((b) =>
+    `M${X(-b.r).toFixed(1)},${Y(b.y).toFixed(1)}L${X(b.r).toFixed(1)},${Y(b.y).toFixed(1)}`);
+
+  const basketW = Math.max(6, d.D * s * 0.09);
+  const basket =
+    `M${(cx - basketW).toFixed(1)},${(yb + 5).toFixed(1)}` +
+    `h${(basketW * 2).toFixed(1)}v10h${(-basketW * 2).toFixed(1)}z`;
+
+  return { W, H, outline, meridians: mer.join(''), rings: rings.join(''), basket, dims: d };
+}
+
+/** Развёртка клина: трапеции полотнищ в натуральном масштабе (метры). */
+export function unwrap(env) {
+  const { bounds, gores: N, rows } = env;
+  const cells = [];
+  for (let j = 0; j < rows; j++) {
+    const b0 = bounds[j], b1 = bounds[j + 1];
+    const wBot = (2 * Math.PI * b0.r) / N;
+    const wTop = (2 * Math.PI * b1.r) / N;
+    const h = b1.s - b0.s;
+    cells.push({ row: j, wBot, wTop, h, yBot: b0.s, yTop: b1.s });
+  }
+  const goreLen = bounds[rows].s;
+  const maxW = Math.max(...cells.map((c) => Math.max(c.wBot, c.wTop)));
+  return { cells, goreLen, maxW, gores: N, rows };
+}

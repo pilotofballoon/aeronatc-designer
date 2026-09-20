@@ -1,0 +1,9 @@
+# служебное
+.DS_Store
+Thumbs.db
+*.log
+
+# локальные выгрузки конфигуратора
+*_3d.png
+*_raskladka.png
+*_karta-cvetov.csv
