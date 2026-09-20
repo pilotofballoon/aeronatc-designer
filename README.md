@@ -1,5 +1,7 @@
 # АэроНаТЦ — дизайнер оболочек аэростатов
 
+**Рабочая версия: <https://pilotofballoon.github.io/aeronatc-designer/>**
+
 Конфигуратор оболочек тепловых аэростатов для **АэроНаТЦ** (Аэростатный научно-технический
 центр, aeronatc.ru). Аналог дизайнера РУСБАЛ, но построенный на типоряде, тканях и
 технологических особенностях АэроНаТЦ.
@@ -68,7 +70,21 @@ python devserver.py 5199 .
 
 Затем открыть <http://localhost:5199>.
 
-Деплой: залить папку как статический сайт (Vercel, Netlify, nginx) — `vercel.json`
+## Публикация
+
+Сайт опубликован на GitHub Pages: каждый push в `main` запускает
+`.github/workflows/pages.yml`, который выкладывает репозиторий как есть — сборки нет.
+
+Встраивание в сайт на Тильде — блок T123 «HTML-код»:
+
+```html
+<iframe src="https://pilotofballoon.github.io/aeronatc-designer/"
+        style="width:100%;height:860px;border:0;border-radius:14px"
+        allowfullscreen loading="lazy"
+        title="Дизайнер оболочек АэроНаТЦ"></iframe>
+```
+
+Для другого хостинга (Vercel, Netlify, nginx) папка заливается как есть — `vercel.json`
 уже настроен.
 
 ## Структура
