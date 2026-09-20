@@ -1,7 +1,7 @@
 // Состояние проекта: модель, карта цветов, история, сохранение.
 
 import { DEFAULT_COLOR, getModel, MODELS } from './data.js';
-import { dims, valveSpec } from './geometry.js';
+import { dims, valveSpec, SCOOP_SEGS } from './geometry.js';
 
 const STORAGE_KEY = 'aeronatc.designer.v1';
 const HISTORY_LIMIT = 80;
@@ -21,10 +21,11 @@ export const state = {
   panels: [],
   valve: [],
   skirt: [],
-  mouth: 'P17',
+  scoop: [],
+  mouth: 'P17',          // устарело: осталось для чтения старых проектов
   active: 'S06',
   secondary: 'S05',
-  paintMode: 'panel',      // panel | gore | row | ring | all
+  paintMode: 'panel',      // panel | gore | row | ring | diag | all
   gloss: 0.32,
   tapes: false,
   tapeColor: 'P15',
@@ -68,6 +69,8 @@ export function applyModel(modelId, keepColors = true) {
   state.valve = fill(state.valveSegs, oldValve[0] || DEFAULT_COLOR);
   const oldSkirt = state.skirt;
   state.skirt = fill(state.gores, oldSkirt[0] || 'S03');
+  const oldScoop = state.scoop;
+  state.scoop = fill(SCOOP_SEGS, oldScoop[0] || state.mouth || 'P17');
 }
 
 export const panelAt = (g, r) => state.panels[r * state.gores + g];
@@ -77,7 +80,7 @@ export const setPanelRaw = (g, r, code) => { state.panels[r * state.gores + g] =
 function snapshot() {
   return JSON.stringify({
     modelId: state.modelId, panels: state.panels, valve: state.valve,
-    skirt: state.skirt, mouth: state.mouth, tapes: state.tapes, tapeColor: state.tapeColor,
+    skirt: state.skirt, scoop: state.scoop, tapes: state.tapes, tapeColor: state.tapeColor,
   });
 }
 
@@ -102,7 +105,7 @@ function restore(raw) {
   state.panels = s.panels;
   state.valve = s.valve;
   state.skirt = s.skirt;
-  state.mouth = s.mouth;
+  state.scoop = s.scoop;
   state.tapes = s.tapes;
   state.tapeColor = s.tapeColor;
 }
@@ -134,7 +137,7 @@ export function serialize() {
     app: 'aeronatc-designer', version: 1, saved: new Date().toISOString(),
     project: state.project, customer: state.customer,
     modelId: state.modelId, gores: state.gores, rows: state.rows,
-    panels: state.panels, valve: state.valve, skirt: state.skirt, mouth: state.mouth,
+    panels: state.panels, valve: state.valve, skirt: state.skirt, scoop: state.scoop,
     tapes: state.tapes, tapeColor: state.tapeColor, gloss: state.gloss,
   };
 }
@@ -147,7 +150,8 @@ export function load(data) {
   }
   if (Array.isArray(data.valve) && data.valve.length === state.valveSegs) state.valve = data.valve;
   if (Array.isArray(data.skirt) && data.skirt.length === state.gores) state.skirt = data.skirt;
-  if (data.mouth) state.mouth = data.mouth;
+  if (Array.isArray(data.scoop) && data.scoop.length === SCOOP_SEGS) state.scoop = data.scoop;
+  else if (data.mouth) state.scoop = fill(SCOOP_SEGS, data.mouth); // проект версии 1
   state.tapes = !!data.tapes;
   if (data.tapeColor) state.tapeColor = data.tapeColor;
   if (typeof data.gloss === 'number') state.gloss = data.gloss;
@@ -246,6 +250,6 @@ export function spec(env) {
   }
   state.valve.forEach((c) => add(c, 'клапан', 0));
   state.skirt.forEach((c) => add(c, 'юбка', 0));
-  add(state.mouth, 'воздухозаборник', 0);
+  state.scoop.forEach((c) => add(c, 'воздухозаборник', 0));
   return [...counts.values()].sort((a, b) => b.panels - a.panels);
 }

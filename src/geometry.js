@@ -281,7 +281,8 @@ export function buildTapes(env) {
 export function valveSpec(env) {
   const { dims: d, gores } = env;
   const segs = Math.max(6, Math.round(gores / 2));
-  const rTarget = d.R * 0.26;
+  // Диаметр клапана — 36 % диаметра оболочки (замерено по серийной модели).
+  const rTarget = d.R * 0.36;
   // Найти высоту, на которой радиус профиля равен rTarget (в куполе).
   let y = d.H * 0.97;
   for (let i = d.prof.length - 1; i > 1; i--) {
@@ -329,8 +330,8 @@ export function buildValve(env) {
 export function buildSkirt(env) {
   const { dims: d, gores: N } = env;
   const rTop = d.prof[0][1] * d.R;
-  const h = d.H * 0.075;
-  const rBot = rTop * 0.82;
+  const h = d.H * 0.05;          // огнестойкий пояс ≈ 1 м на оболочке 20 м
+  const rBot = rTop * 0.93;
   const pos = [], nor = [], col = [], idx = [];
   const ranges = [];
   let v = 0;
@@ -360,6 +361,58 @@ export function buildSkirt(env) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   return { geometry: g, ranges, rBot, h };
+}
+
+/**
+ * Воздухозаборник — не кольцо, а фартук: дуга примерно на полокружности,
+ * собранная из клиньев и подшитая к низу юбки. Ловит ветер при наполнении.
+ */
+export const SCOOP_SEGS = 5;
+export const SCOOP_ARC = Math.PI;        // охват дуги, рад
+export const SCOOP_START = Math.PI * 0.5; // середина фартука смотрит на −X
+
+export function buildScoop(env, skirt) {
+  const d = env.dims;
+  const rTop = skirt.rBot;
+  const yTop = -skirt.h;
+  const drop = d.H * 0.118;              // длина фартука
+  const flare = 1.14;                    // к низу слегка расходится
+  const step = SCOOP_ARC / SCOOP_SEGS;
+  const rows = 3;
+
+  const pos = [], nor = [], col = [], idx = [];
+  const ranges = [];
+  let v = 0;
+
+  for (let s = 0; s < SCOOP_SEGS; s++) {
+    const a0 = SCOOP_START + s * step;
+    const a1 = a0 + step;
+    const start = v;
+    for (let k = 0; k < rows; k++) {
+      const t0 = k / rows, t1 = (k + 1) / rows;
+      const base = v;
+      for (const [a, t] of [[a0, t0], [a1, t0], [a1, t1], [a0, t1]]) {
+        // Клин слегка провисает наружу и сужается к низу по краям дуги.
+        const edge = Math.abs((a - SCOOP_START) / SCOOP_ARC - 0.5) * 2; // 0 в центре, 1 по краям
+        const r = rTop * (1 + (flare - 1) * t) * (1 - 0.06 * t * edge);
+        const y = yTop - drop * t * (1 - 0.35 * edge * edge);
+        pos.push(r * Math.cos(a), y, r * Math.sin(a));
+        const n = new THREE.Vector3(Math.cos(a), 0.2, Math.sin(a)).normalize();
+        nor.push(n.x, n.y, n.z);
+        col.push(1, 1, 1);
+        v++;
+      }
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+    ranges.push([start, v - start]);
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  return { geometry: g, ranges, segs: SCOOP_SEGS, rows, drop, rTop, yTop };
 }
 
 /** Контур модели для карточки каталога: силуэт + сетка клиньев и рядов. */

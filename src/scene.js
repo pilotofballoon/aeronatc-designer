@@ -3,13 +3,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import {
-  buildEnvelope, buildSeams, buildTapes, buildValve, buildSkirt, unwrap,
+  buildEnvelope, buildSeams, buildTapes, buildValve, buildSkirt, buildScoop, unwrap,
 } from './geometry.js';
 import { getModel, hexOf } from './data.js';
 import { state, mark, commit } from './state.js';
 
 let renderer, scene, camera, controls, raycaster;
-let group, envMesh, seamLines, tapeMesh, valveMesh, skirtMesh, mouthMesh, basket;
+let group, envMesh, seamLines, tapeMesh, valveMesh, skirtMesh, scoopMesh, rig;
+let savedView = null;
 let env = null;
 let onPaint = null;
 const pointer = new THREE.Vector2();
@@ -55,23 +56,27 @@ export function init(canvas, opts = {}) {
   return { renderer, scene, camera, controls };
 }
 
+// Небо — фон сцены под прозрачным канвасом. 3D-купол на больших радиусах
+// ведёт себя по-разному на разных GPU, поэтому фон делаем средствами CSS,
+// а при выгрузке PNG подкладываем ту же заливку под кадр.
+let skyOn = false;
+
+export const SKY_STOPS = [
+  [0.00, '#12467f'],
+  [0.26, '#2f7cbe'],
+  [0.48, '#7bb4e0'],
+  [0.66, '#bcdcf1'],
+  [0.82, '#e8f2f8'],
+  [1.00, '#f6f7f3'],
+];
+
 export function setBackground(kind) {
-  if (kind === 'sky') {
-    const c = document.createElement('canvas');
-    c.width = 8; c.height = 256;
-    const g = c.getContext('2d');
-    const grad = g.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, '#2f6fb0');
-    grad.addColorStop(0.55, '#8ec2e8');
-    grad.addColorStop(1, '#e6f1f8');
-    g.fillStyle = grad; g.fillRect(0, 0, 8, 256);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    scene.background = tex;
-  } else {
-    scene.background = null;
-  }
+  skyOn = kind === 'sky';
+  scene.background = null;
+  return skyOn;
 }
+
+export const isSky = () => skyOn;
 
 function disposeGroup() {
   group.traverse((o) => {
@@ -128,46 +133,167 @@ export function rebuild() {
   skirtMesh.userData = { kind: 'skirt', ranges: s.ranges };
   group.add(skirtMesh);
 
-  buildLowerRig(s);
+  const sc = buildScoop(env, s);
+  scoopMesh = new THREE.Mesh(sc.geometry, new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.82, side: THREE.DoubleSide,
+  }));
+  scoopMesh.userData = { kind: 'scoop', ranges: sc.ranges };
+  group.add(scoopMesh);
+
+  buildBasketRig(s);
   applyColors();
   applyGloss();
   frameCamera();
   return env;
 }
 
-// Воздухозаборник, стропы, гондола и горелка.
-function buildLowerRig(skirt) {
-  const d = env.dims;
-  const rTop = skirt.rBot;
-  const yTop = -skirt.h;
-  const basketW = Math.max(1.1, d.D * 0.075);
-  const gap = d.H * 0.115;
-  const yBasket = yTop - gap;
+// ─── Гондола, горелка, пилот, стропы ──────────────────────────────────────────
+// Габариты плетёной гондолы берутся из каталога АэроНаТЦ (110×105 … 192×136 см),
+// поэтому корзина меняет размер вместе с моделью и задаёт честный масштаб.
 
-  const cone = new THREE.CylinderGeometry(rTop, basketW * 0.62, gap, 48, 1, true);
-  cone.translate(0, yTop - gap / 2, 0);
-  mouthMesh = new THREE.Mesh(cone, new THREE.MeshStandardMaterial({
-    color: 0x2b2f36, roughness: 0.85, side: THREE.DoubleSide,
+const BASKET_H = 1.15;    // высота плетения, м
+const UPRIGHT_H = 1.05;   // стойки рамы горелки
+const BURNER_H = 0.32;
+const PILOT_H = 1.75;
+
+function roundedRect(w, d, r) {
+  const s = new THREE.Shape();
+  const x = w / 2, z = d / 2;
+  s.moveTo(-x + r, -z);
+  s.lineTo(x - r, -z); s.absarc(x - r, -z + r, r, -Math.PI / 2, 0, false);
+  s.lineTo(x, z - r); s.absarc(x - r, z - r, r, 0, Math.PI / 2, false);
+  s.lineTo(-x + r, z); s.absarc(-x + r, z - r, r, Math.PI / 2, Math.PI, false);
+  s.lineTo(-x, -z + r); s.absarc(-x + r, -z + r, r, Math.PI, Math.PI * 1.5, false);
+  return s;
+}
+
+function prism(w, d, h, y, material) {
+  const geo = new THREE.ExtrudeGeometry(roundedRect(w, d, Math.min(w, d) * 0.22), {
+    depth: h, bevelEnabled: false, curveSegments: 6,
+  });
+  // После поворота выдавливание ложится в диапазон y…y+h.
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, y, 0);
+  return new THREE.Mesh(geo, material);
+}
+
+// Плетение ротанга генерируем на канвасе — ни одного внешнего файла.
+let wickerTex = null;
+function wicker() {
+  if (wickerTex) return wickerTex;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#a8783f'; g.fillRect(0, 0, 128, 128);
+  for (let y = 0; y < 128; y += 8) {
+    for (let x = 0; x < 128; x += 16) {
+      const off = (y / 8) % 2 ? 8 : 0;
+      g.fillStyle = (y / 8) % 2 ? '#b9884a' : '#96682f';
+      g.beginPath();
+      g.ellipse(x + off + 8, y + 4, 7.2, 3.2, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  g.strokeStyle = 'rgba(70,45,20,.35)'; g.lineWidth = 1.4;
+  for (let x = 0; x < 128; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 128); g.stroke(); }
+  wickerTex = new THREE.CanvasTexture(c);
+  wickerTex.colorSpace = THREE.SRGBColorSpace;
+  wickerTex.wrapS = wickerTex.wrapT = THREE.RepeatWrapping;
+  wickerTex.repeat.set(4, 2);
+  return wickerTex;
+}
+
+// Пилот — масштабный силуэт, всегда лицом к камере.
+let pilotTex = null;
+function pilotSprite() {
+  if (!pilotTex) {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = '#2f3845';
+    g.beginPath(); g.arc(64, 34, 22, 0, Math.PI * 2); g.fill();          // голова
+    g.beginPath();                                                        // торс
+    g.moveTo(40, 62); g.lineTo(88, 62); g.lineTo(94, 150); g.lineTo(34, 150); g.closePath(); g.fill();
+    g.fillRect(24, 66, 14, 78);                                           // руки
+    g.fillRect(90, 66, 14, 78);
+    g.fillRect(44, 150, 17, 100);                                         // ноги
+    g.fillRect(67, 150, 17, 100);
+    pilotTex = new THREE.CanvasTexture(c);
+    pilotTex.colorSpace = THREE.SRGBColorSpace;
+  }
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: pilotTex, transparent: true, opacity: 0.88, depthWrite: false,
   }));
-  mouthMesh.userData.kind = 'mouth';
-  group.add(mouthMesh);
+  sp.scale.set(PILOT_H * 0.5, PILOT_H, 1);
+  return sp;
+}
 
-  basket = new THREE.Group();
-  const bh = basketW * 0.85;
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(basketW * 0.55, basketW * 0.5, bh, 16),
-    new THREE.MeshStandardMaterial({ color: 0xa9793f, roughness: 0.95 }),
-  );
-  body.position.y = yBasket - bh / 2;
-  basket.add(body);
+function buildBasketRig(skirt) {
+  const d = env.dims;
+  const model = env.model;
+  const b = model.basket || { w: 1.6, d: 1.05 };
 
-  const frame = new THREE.Mesh(
-    new THREE.CylinderGeometry(basketW * 0.12, basketW * 0.12, bh * 0.6, 10),
-    new THREE.MeshStandardMaterial({ color: 0x8d9299, roughness: 0.4, metalness: 0.6 }),
-  );
-  frame.position.y = yBasket + bh * 0.25;
-  basket.add(frame);
-  group.add(basket);
+  const yBurnerTop = -skirt.h - d.H * 0.105;
+  const yRim = yBurnerTop - BURNER_H - UPRIGHT_H;
+  const yFloor = yRim - BASKET_H;
+
+  rig = new THREE.Group();
+
+  const wickerMat = new THREE.MeshStandardMaterial({ map: wicker(), roughness: 0.95 });
+  const leather = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.75 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x9aa1a9, roughness: 0.35, metalness: 0.75 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xb98b39, roughness: 0.4, metalness: 0.8 });
+
+  // Плетение и кожаная обвязка по верху и низу.
+  rig.add(prism(b.w, b.d, BASKET_H, yFloor, wickerMat));
+  rig.add(prism(b.w * 1.03, b.d * 1.03, 0.11, yRim - 0.11, leather));
+  rig.add(prism(b.w * 1.02, b.d * 1.02, 0.07, yFloor, leather));
+
+  // Стойки рамы горелки по углам и верхняя рамка.
+  const ux = b.w / 2 - 0.1, uz = b.d / 2 - 0.1;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const up = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, UPRIGHT_H, 8), steel);
+      up.position.set(sx * ux, yRim + UPRIGHT_H / 2, sz * uz);
+      rig.add(up);
+    }
+  }
+  const frameTop = prism(b.w * 0.72, b.d * 0.72, 0.06, yRim + UPRIGHT_H, steel);
+  rig.add(frameTop);
+
+  // Блок горелки и сопло.
+  const burner = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, BURNER_H, 12), brass);
+  burner.position.y = yRim + UPRIGHT_H + BURNER_H / 2;
+  rig.add(burner);
+
+  // Топливные баллоны по углам внутри корзины.
+  for (const sx of [-1, 1]) {
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, BASKET_H * 0.8, 12), steel);
+    cyl.position.set(sx * (b.w / 2 - 0.24), yFloor + BASKET_H * 0.42, -(b.d / 2 - 0.24));
+    rig.add(cyl);
+  }
+
+  const pilot = pilotSprite();
+  pilot.position.set(b.w * 0.14, yFloor + PILOT_H / 2 + 0.05, b.d * 0.1);
+  rig.add(pilot);
+
+  // Стропы от рамы горелки к низу юбки.
+  const pts = [];
+  const N = Math.min(24, env.gores);
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const rx = Math.cos(a) * skirt.rBot, rz = Math.sin(a) * skirt.rBot;
+    const cx = Math.sign(Math.cos(a) || 1) * ux, cz = Math.sign(Math.sin(a) || 1) * uz;
+    pts.push(rx, -skirt.h, rz, cx, yRim + UPRIGHT_H, cz);
+  }
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  rig.add(new THREE.LineSegments(cg, new THREE.LineBasicMaterial({
+    color: 0x3a4250, transparent: true, opacity: 0.5,
+  })));
+
+  rig.userData = { yFloor, yRim, yBurnerTop, basket: b, pilot };
+  group.add(rig);
 }
 
 /** Перекрасить все вершины по карте цветов. */
@@ -190,9 +316,7 @@ export function applyColors() {
 
   paintRanges(valveMesh, state.valve);
   paintRanges(skirtMesh, state.skirt);
-
-  tmpColor.set(hexOf(state.mouth)).convertSRGBToLinear();
-  mouthMesh.material.color.copy(tmpColor);
+  paintRanges(scoopMesh, state.scoop);
 
   tapeMesh.visible = state.tapes;
   tmpColor.set(hexOf(state.tapeColor)).convertSRGBToLinear();
@@ -218,6 +342,7 @@ export function applyGloss() {
   envMesh.material.roughness = r;
   valveMesh.material.roughness = r + 0.04;
   skirtMesh.material.roughness = r + 0.06;
+  scoopMesh.material.roughness = r + 0.08;
 }
 
 export function setSeamsVisible(v) { if (seamLines) seamLines.visible = v; }
@@ -230,7 +355,7 @@ function onPointerDown(ev) {
   pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
 
-  const targets = [envMesh, valveMesh, skirtMesh, mouthMesh].filter(Boolean);
+  const targets = [envMesh, valveMesh, skirtMesh, scoopMesh].filter(Boolean);
   const hits = raycaster.intersectObjects(targets, false);
   if (!hits.length) return;
 
@@ -262,8 +387,10 @@ function paintHit(kind, faceIndex) {
     const seg = Math.floor(faceIndex / 6);
     if (state.paintMode === 'all') state.skirt = state.skirt.map(() => code);
     else state.skirt[seg % state.skirt.length] = code;
-  } else if (kind === 'mouth') {
-    state.mouth = code;
+  } else if (kind === 'scoop') {
+    const seg = Math.floor(faceIndex / 6);
+    if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
+    else state.scoop[seg % state.scoop.length] = code;
   }
   applyColors();
   commit('paint');
@@ -278,6 +405,12 @@ export function paintPanel(g, r, code) {
     case 'gore': for (let j = 0; j < R; j++) set(g, j); break;
     case 'row':  for (let i = 0; i < G; i++) set(i, r); break;
     case 'ring': for (let i = 0; i < G; i += 2) set((g % 2 === 0 ? i : i + 1) % G, r); break;
+    case 'diag': {
+      // Диагональная полоса через всю оболочку: шаг один клин на ряд.
+      const k = g - r;
+      for (let j = 0; j < R; j++) set(((k + j) % G + G) % G, j);
+      break;
+    }
     case 'all':  for (let j = 0; j < R; j++) for (let i = 0; i < G; i++) set(i, j); break;
     default:     set(g, r);
   }
@@ -302,6 +435,42 @@ export function frameCamera() {
   controls.update();
 }
 
+/**
+ * Вид из корзины: камера встаёт на пол гондолы и смотрит вверх в оболочку —
+ * так виден рисунок изнутри и клапан. Повторный вызов возвращает прежний вид.
+ */
+export function basketView(on) {
+  if (!env || !rig) return;
+  if (on) {
+    if (!savedView) {
+      savedView = { pos: camera.position.clone(), target: controls.target.clone(),
+        min: controls.minDistance, max: controls.maxDistance, fov: camera.fov };
+    }
+    const { yFloor, basket: b, pilot } = rig.userData;
+    const eye = yFloor + 1.55;
+    // Пилот стоит там же, где встаёт камера, а фартук перекрывает половину
+    // купола — в этом режиме оба мешают рассматривать рисунок.
+    if (pilot) pilot.visible = false;
+    scoopMesh.visible = false;
+    controls.minDistance = 0.05;
+    controls.maxDistance = env.dims.H * 0.9;
+    camera.fov = 62; camera.updateProjectionMatrix();
+    camera.position.set(-b.w * 0.22, eye, -b.d * 0.16);
+    controls.target.set(0, eye + env.dims.H * 0.35, 0);
+    controls.update();
+  } else if (savedView) {
+    if (rig.userData.pilot) rig.userData.pilot.visible = true;
+    scoopMesh.visible = true;
+    camera.position.copy(savedView.pos);
+    controls.target.copy(savedView.target);
+    controls.minDistance = savedView.min;
+    controls.maxDistance = savedView.max;
+    camera.fov = savedView.fov; camera.updateProjectionMatrix();
+    controls.update();
+    savedView = null;
+  }
+}
+
 export function resize(w, h) {
   if (!renderer) return;
   renderer.setSize(w, h, false);
@@ -322,7 +491,20 @@ export function snapshotPNG(width = 1600) {
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
   renderer.render(scene, camera);
-  const url = el.toDataURL('image/png');
+  let url;
+  if (skyOn) {
+    // Канвас прозрачный, поэтому кадр кладём поверх заливки неба.
+    const out = document.createElement('canvas');
+    out.width = el.width; out.height = el.height;
+    const g = out.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, out.height);
+    for (const [p, c] of SKY_STOPS) grad.addColorStop(p, c);
+    g.fillStyle = grad; g.fillRect(0, 0, out.width, out.height);
+    g.drawImage(el, 0, 0);
+    url = out.toDataURL('image/png');
+  } else {
+    url = el.toDataURL('image/png');
+  }
   renderer.setSize(prev.w, prev.h, false);
   camera.aspect = prev.w / prev.h; camera.updateProjectionMatrix();
   renderer.render(scene, camera);

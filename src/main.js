@@ -97,9 +97,15 @@ class App {
     document.getElementById('previewBar').hidden = !preview;
     document.querySelector('.stage-tools').hidden = preview;
     document.getElementById('stageHint').hidden = preview;
-    scene.setBackground(preview ? 'sky' : null);
+    this.applySky(preview);
     scene.setSeamsVisible(!preview && this.seamsOn !== false);
     this.resize();
+  }
+
+  applySky(force) {
+    const on = force || this.sky;
+    scene.setBackground(on ? 'sky' : null);
+    this.stage.classList.toggle('sky', !!on);
   }
 
   bindChrome() {
@@ -127,6 +133,22 @@ class App {
     document.getElementById('btnSave').addEventListener('click', () => this.exportPDF());
     document.getElementById('btnResetView').addEventListener('click', () => scene.frameCamera());
     document.getElementById('btnShot').addEventListener('click', () => this.exportShot());
+
+    const basketBtn = document.getElementById('btnBasket');
+    this.inBasket = false;
+    basketBtn.addEventListener('click', () => {
+      this.inBasket = !this.inBasket;
+      basketBtn.classList.toggle('is-on', this.inBasket);
+      scene.basketView(this.inBasket);
+    });
+
+    const skyBtn = document.getElementById('btnSky');
+    this.sky = false;
+    skyBtn.addEventListener('click', () => {
+      this.sky = !this.sky;
+      skyBtn.classList.toggle('is-on', this.sky);
+      this.applySky();
+    });
 
     const seams = document.getElementById('btnSeams');
     this.seamsOn = true;

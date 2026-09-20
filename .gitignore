@@ -7,3 +7,6 @@ Thumbs.db
 *_3d.png
 *_raskladka.png
 *_karta-cvetov.csv
+
+# локальная конфигурация редактора
+.claude/

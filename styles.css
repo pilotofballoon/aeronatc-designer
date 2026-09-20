@@ -109,6 +109,17 @@ button { font: inherit; color: inherit; }
 #stage { position: relative; flex: 1; background: var(--bg-stage); min-width: 0; }
 #view3d { display: block; width: 100%; height: 100%; touch-action: none; }
 
+/* Небо: заливка сцены под прозрачным канвасом. Те же стопы продублированы
+   в scene.js — SKY_STOPS, чтобы выгрузка PNG совпадала с экраном. */
+#stage.sky {
+  background:
+    radial-gradient(60% 22% at 22% 62%, rgba(255,255,255,.55), rgba(255,255,255,0) 70%),
+    radial-gradient(48% 18% at 72% 55%, rgba(255,255,255,.42), rgba(255,255,255,0) 72%),
+    radial-gradient(38% 14% at 48% 74%, rgba(255,255,255,.38), rgba(255,255,255,0) 70%),
+    radial-gradient(30% 10% at 88% 70%, rgba(255,255,255,.34), rgba(255,255,255,0) 72%),
+    linear-gradient(180deg, #12467f 0%, #2f7cbe 26%, #7bb4e0 48%, #bcdcf1 66%, #e8f2f8 82%, #f6f7f3 100%);
+}
+
 .stage-tools {
   position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
   display: flex; flex-direction: column; gap: 8px;
@@ -161,7 +172,7 @@ button { font: inherit; color: inherit; }
 .hint { margin: 6px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-3); }
 
 /* Режимы покраски */
-.modes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .mode {
   padding: 9px 2px 7px; border: 1px solid var(--line); border-radius: 10px;
   background: var(--surface); cursor: pointer; text-align: center;

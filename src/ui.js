@@ -19,10 +19,12 @@ const MODE_ICONS = {
   gore: '<rect x="4" y="3" width="6" height="18" rx="1.4" fill="currentColor"/><rect x="12" y="3" width="6" height="18" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   row: '<rect x="3" y="4" width="18" height="6" rx="1.4" fill="currentColor"/><rect x="3" y="12" width="18" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   ring: '<rect x="3" y="4" width="4" height="6" rx="1" fill="currentColor"/><rect x="10" y="4" width="4" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="17" y="4" width="4" height="6" rx="1" fill="currentColor"/><rect x="3" y="13" width="4" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="10" y="13" width="4" height="6" rx="1" fill="currentColor"/><rect x="17" y="13" width="4" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>',
+  diag: '<path d="M3 15.5 15.5 3h5.5v5.5L8.5 21H3z" fill="currentColor"/><path d="M3 21 21 3" stroke="currentColor" stroke-width="1.2" opacity=".35"/>',
   all: '<circle cx="12" cy="12" r="8.4" fill="currentColor"/>',
 };
 const MODES = [
-  ['panel', 'Полотнище'], ['gore', 'Клин'], ['row', 'Ряд'], ['ring', 'Через один'], ['all', 'Всё'],
+  ['panel', 'Полотнище'], ['gore', 'Клин'], ['row', 'Ряд'],
+  ['ring', 'Через один'], ['diag', 'Диагональ'], ['all', 'Всё'],
 ];
 
 export class UI {
@@ -57,6 +59,7 @@ export class UI {
       `<span><b>${state.gores}</b> клиньев</span>`,
       `<span><b>${state.rows}</b> рядов</span>`,
       `<span>${esc(m.crew)}</span>`,
+      m.basket ? `<span>гондола <b>${esc(m.basket.label)}</b></span>` : '',
     ].join('');
     document.getElementById('layoutModel').textContent = `${m.code} · ${state.gores}×${state.rows}`;
   }
@@ -145,8 +148,12 @@ export class UI {
 
       <div class="section">
         <h4>Воздухозаборник</h4>
-        <button class="btn block" id="fillMouth">Залить воздухозаборник</button>
-        <p class="hint">Меш между гондолой и горловиной оболочки.</p>
+        <div class="rows">
+          <button class="btn block" id="fillScoop">Залить фартук активным цветом</button>
+          <button class="btn block" id="altScoop">Залить через клин</button>
+        </div>
+        <p class="hint">Фартук из 5 клиньев на полокружности — ловит ветер при наполнении.
+          Кликайте по клиньям на 3D, каждый красится отдельно.</p>
       </div>
 
       <div class="section">
@@ -204,8 +211,13 @@ export class UI {
       state.skirt = state.skirt.map((c, i) => (i % 2 ? state.secondary : state.active));
       commit('skirt'); app.refreshAll();
     });
-    this.body.querySelector('#fillMouth').addEventListener('click', () => {
-      mark(); state.mouth = state.active; commit('mouth'); app.refreshAll();
+    this.body.querySelector('#fillScoop').addEventListener('click', () => {
+      mark(); state.scoop = state.scoop.map(() => state.active); commit('scoop'); app.refreshAll();
+    });
+    this.body.querySelector('#altScoop').addEventListener('click', () => {
+      mark();
+      state.scoop = state.scoop.map((c, i) => (i % 2 ? state.secondary : state.active));
+      commit('scoop'); app.refreshAll();
     });
 
     const gloss = this.body.querySelector('#gloss');
@@ -224,7 +236,7 @@ export class UI {
       state.panels = state.panels.map(() => 'S05');
       state.valve = state.valve.map(() => 'S05');
       state.skirt = state.skirt.map(() => 'S03');
-      state.mouth = 'P17';
+      state.scoop = state.scoop.map(() => 'P17');
       commit('reset'); app.refreshAll();
     });
   }
@@ -472,7 +484,8 @@ export function openCatalog(onPick) {
         `${m.volume} м³`, `${m.gores} клиньев`,
         `${s.dims.H.toFixed(1)}×${s.dims.D.toFixed(1)} м`,
         m.mass ? `${m.mass} кг` : 'вес по расчёту',
-      ];
+        m.basket ? `гондола ${m.basket.label}` : '',
+      ].filter(Boolean);
       return `<button class="card${m.id === state.modelId ? ' is-active' : ''}" data-id="${m.id}">
         ${m.id === state.modelId ? '<span class="badge">активна</span>' : ''}
         <figure><svg viewBox="0 0 ${s.W} ${s.H}" aria-hidden="true">

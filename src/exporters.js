@@ -45,6 +45,10 @@ export function exportCSV(env) {
     const c = colorByCode(code);
     if (c) rows.push([`юбка-${i + 1}`, '', c.code, c.fabricLabel, `${c.ru} / ${c.en}`, c.hex]);
   });
+  state.scoop.forEach((code, i) => {
+    const c = colorByCode(code);
+    if (c) rows.push([`фартук-${i + 1}`, '', c.code, c.fabricLabel, `${c.ru} / ${c.en}`, c.hex]);
+  });
   const csv = '﻿' + rows.map((r) => r.join(';')).join('\r\n');
   downloadText(`${fileBase()}_karta-cvetov.csv`, csv, 'text/csv');
 }
