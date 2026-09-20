@@ -12,11 +12,13 @@ const PROFILES = {
     [0.680, 0.985], [0.760, 0.935], [0.840, 0.840], [0.900, 0.720], [0.945, 0.585],
     [0.975, 0.420], [0.993, 0.235], [1.000, 0.000],
   ],
+  // Спортивная форма снята с фотографий оболочек АэроНаТЦ: округлый купол,
+  // широкая точка на ~0,66 высоты и длинный почти прямой конус к узкой горловине.
   sport: [
-    [0.000, 0.150], [0.040, 0.240], [0.090, 0.350], [0.150, 0.470], [0.220, 0.590],
-    [0.300, 0.700], [0.380, 0.800], [0.470, 0.885], [0.560, 0.945], [0.640, 0.985],
-    [0.710, 1.000], [0.780, 0.975], [0.850, 0.900], [0.900, 0.800], [0.945, 0.640],
-    [0.975, 0.450], [0.993, 0.240], [1.000, 0.000],
+    [0.000, 0.105], [0.045, 0.190], [0.100, 0.295], [0.165, 0.415], [0.240, 0.545],
+    [0.320, 0.665], [0.400, 0.775], [0.480, 0.875], [0.545, 0.945], [0.605, 0.990],
+    [0.660, 1.000], [0.720, 0.985], [0.780, 0.945], [0.840, 0.870], [0.895, 0.755],
+    [0.940, 0.610], [0.975, 0.420], [1.000, 0.000],
   ],
   oda: [
     [0.000, 0.200], [0.040, 0.300], [0.090, 0.430], [0.150, 0.560], [0.220, 0.690],
@@ -24,22 +26,10 @@ const PROFILES = {
     [0.720, 0.980], [0.800, 0.920], [0.870, 0.810], [0.920, 0.690], [0.955, 0.550],
     [0.978, 0.400], [0.994, 0.220], [1.000, 0.000],
   ],
-  drop: [
-    [0.000, 0.150], [0.035, 0.260], [0.080, 0.400], [0.140, 0.560], [0.210, 0.710],
-    [0.290, 0.840], [0.370, 0.930], [0.450, 0.985], [0.520, 1.000], [0.600, 0.975],
-    [0.680, 0.910], [0.760, 0.810], [0.840, 0.670], [0.900, 0.520], [0.945, 0.370],
-    [0.975, 0.240], [0.993, 0.120], [1.000, 0.000],
-  ],
-  barrel: [
-    [0.000, 0.300], [0.040, 0.420], [0.090, 0.560], [0.150, 0.690], [0.220, 0.800],
-    [0.300, 0.880], [0.380, 0.940], [0.470, 0.975], [0.560, 0.995], [0.650, 1.000],
-    [0.740, 0.985], [0.820, 0.940], [0.880, 0.860], [0.925, 0.740], [0.958, 0.600],
-    [0.980, 0.430], [0.994, 0.230], [1.000, 0.000],
-  ],
 };
 
 // Отношение высоты к диаметру для каждой формы.
-const ASPECT = { classic: 1.06, sport: 1.32, oda: 1.02, drop: 1.18, barrel: 1.12 };
+const ASPECT = { classic: 1.06, sport: 1.45, oda: 1.02 };
 
 const MERIDIAN_STEPS = 400;      // точность дискретизации профиля
 const TARGET_PANEL_H = 1.45;     // целевая высота полотнища, м (ширина рулона ткани)
@@ -118,7 +108,9 @@ export function dims(model) {
     cum.push(arc);
   }
 
-  const rows = Math.min(30, Math.max(8, Math.round(arc / TARGET_PANEL_H)));
+  // Полотнище не может быть выше рабочей ширины рулона, поэтому округляем вверх:
+  // число рядов растёт вместе с длиной клина, а не пляшет от округления.
+  const rows = Math.min(30, Math.max(8, Math.ceil(arc / TARGET_PANEL_H)));
   return { shape, aspect, prof, full, R, D, H, arc, cum, rows, gores: model.gores };
 }
 
@@ -275,7 +267,7 @@ export function buildSeams(env) {
 export function buildTapes(env) {
   const { dims: d, bounds, gores: N, bulge } = env;
   const step = (Math.PI * 2) / N;
-  const width = d.R * 0.012;
+  const width = d.R * 0.0042;
   const pos = [];
   const nor = [];
   const idx = [];
@@ -323,43 +315,60 @@ export function valveSpec(env) {
   };
 }
 
+export const VALVE_RING = 0.72;   // доля радиуса, где кончаются клинья
+
 export function buildValve(env) {
   const { segs, radius, y } = valveSpec(env);
-  const ANG = 5;                               // дробление сегмента по дуге
-  const RAD = 3;                               // дробление по радиусу
-  const sag = radius * 0.13;                   // провис ткани внутрь
-  const pos = [], nor = [], col = [], idx = [];
+  const ANG = 5;                   // дробление по дуге для гладкого круга
+  const RAD = 3;                   // дробление клина по радиусу
+  const sag = radius * 0.13;       // провис ткани внутрь
+  const pos = [], nor = [], uvs = [], idx = [];
   const ranges = [];
+  const triZone = [];
   let v = 0;
 
-  for (let s = 0; s < segs; s++) {
-    const start = v;
-    for (let i = 0; i < ANG; i++) {
-      const a0 = ((s + i / ANG) / segs) * Math.PI * 2;
-      const a1 = ((s + (i + 1) / ANG) / segs) * Math.PI * 2;
-      for (let k = 0; k < RAD; k++) {
-        const t0 = k / RAD, t1 = (k + 1) / RAD;
-        const base = v;
-        for (const [a, t] of [[a0, t0], [a1, t0], [a1, t1], [a0, t1]]) {
-          const r = radius * t;
-          pos.push(r * Math.cos(a), y - sag * (1 - t * t), r * Math.sin(a));
-          const n = new THREE.Vector3(-r * Math.cos(a) * 0.35, 1, -r * Math.sin(a) * 0.35).normalize();
-          nor.push(n.x, n.y, n.z);
-          col.push(1, 1, 1);
-          v++;
+  // Точка полотна клапана + её место на квадратной развёртке клапана.
+  const put = (a2, t) => {
+    const r = radius * t;
+    const x = r * Math.cos(a2), z = r * Math.sin(a2);
+    pos.push(x, y - sag * (1 - t * t), z);
+    const n = new THREE.Vector3(-x * 0.35, radius, -z * 0.35).normalize();
+    nor.push(n.x, n.y, n.z);
+    uvs.push(0.5 + x / (2 * radius), 0.5 + z / (2 * radius));
+    v++;
+  };
+
+  const band = (t0, t1) => {
+    for (let s2 = 0; s2 < segs; s2++) {
+      const start = v;
+      for (let i = 0; i < ANG; i++) {
+        const a0 = ((s2 + i / ANG) / segs) * Math.PI * 2;
+        const a1 = ((s2 + (i + 1) / ANG) / segs) * Math.PI * 2;
+        const steps = t0 === 0 ? RAD : 1;
+        for (let k = 0; k < steps; k++) {
+          const u0 = t0 + ((t1 - t0) * k) / steps;
+          const u1 = t0 + ((t1 - t0) * (k + 1)) / steps;
+          const base = v;
+          put(a0, u0); put(a1, u0); put(a1, u1); put(a0, u1);
+          idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+          triZone.push(ranges.length, ranges.length);
         }
-        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       }
+      ranges.push([start, v - start]);
     }
-    ranges.push([start, v - start]);
-  }
+  };
+
+  // Сначала внешний пояс: по сути прямоугольники по краю клапана.
+  band(VALVE_RING, 1);
+  // Затем длинные клинья от пояса к центру.
+  band(0, VALVE_RING);
 
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.setIndex(idx);
-  return { geometry: g, ranges, segs };
+  return { geometry: g, ranges, triZone, segs, zones: ranges.length };
 }
 
 /** Габариты подвески: гондола из каталога, рама и стойки типовые. */

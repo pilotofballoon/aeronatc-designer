@@ -3,7 +3,7 @@
 
 import { state, mark, commit } from './state.js';
 import { hexOf, getModel, CONTACTS } from './data.js';
-import { paintPanel } from './scene.js';
+import { paintPanel, affectedPanels } from './scene.js';
 import { getCanvas, cellRect } from './atlas.js';
 
 const GAP = 0.18;          // зазор между клиньями, м
@@ -21,7 +21,8 @@ export class LayoutView {
     this.env = null;
     this.zoom = 1;
     this.off = { x: 0, y: 0 };
-    this.hover = null;
+    this.hover = null;       // Set номеров полотнищ, как и на 3D
+    this.mode = 'true';      // true — по размерам ткани, grid — равные квадраты
     this.bind();
   }
 
@@ -44,8 +45,12 @@ export class LayoutView {
         return;
       }
       const h = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
-      const key = h ? `${h.g}:${h.r}` : null;
-      if (key !== this.hoverKey) { this.hoverKey = key; this.hover = h; this.draw(); }
+      const key = h ? `${h.g}:${h.r}:${state.paintMode}` : null;
+      if (key !== this.hoverKey) {
+        this.hoverKey = key;
+        this.hover = h ? affectedPanels(h.g, h.r) : null;
+        this.draw();
+      }
     });
     c.addEventListener('pointerup', (e) => {
       dragging = false;
@@ -56,8 +61,10 @@ export class LayoutView {
       mark();
       paintPanel(h.g, h.r, state.active);
       commit('layout-paint');
-      this.draw();
+      // Сначала пересобираем развёртку, потом рисуем: иначе на холст ляжет
+      // предыдущая версия текстуры и клетка останется незакрашенной.
       this.onChange();
+      this.draw();
     });
     c.addEventListener('pointerleave', () => { this.hover = null; this.hoverKey = null; this.draw(); });
     c.addEventListener('wheel', (e) => {
@@ -68,8 +75,15 @@ export class LayoutView {
     }, { passive: false });
   }
 
+  setMode(mode) { this.mode = mode; this.fit(); }
+
   get metrics() {
     const u = this.env.unwrapped;
+    if (this.mode === 'grid') {
+      // Таблица: равные квадраты без зазоров, клинья по горизонтали.
+      const cell = u.maxW;
+      return { u, pitch: cell, cell, totalW: cell * u.gores, totalH: cell * u.rows };
+    }
     const pitch = u.maxW + GAP;
     return { u, pitch, totalW: pitch * u.gores - GAP, totalH: u.goreLen };
   }
@@ -98,9 +112,18 @@ export class LayoutView {
   }
 
   cellPoly(g, r) {
-    const { u, pitch } = this.metrics;
-    const cell = u.cells[r];
-    const cx = colOf(g, u.gores) * pitch + u.maxW / 2;
+    const m = this.metrics;
+    const col = colOf(g, m.u.gores);
+    if (this.mode === 'grid') {
+      const x0 = col * m.cell;
+      const y0 = r * m.cell;
+      return [
+        this.toPx(x0, y0), this.toPx(x0 + m.cell, y0),
+        this.toPx(x0 + m.cell, y0 + m.cell), this.toPx(x0, y0 + m.cell),
+      ];
+    }
+    const cell = m.u.cells[r];
+    const cx = col * m.pitch + m.u.maxW / 2;
     return [
       this.toPx(cx - cell.wBot / 2, cell.yBot),
       this.toPx(cx + cell.wBot / 2, cell.yBot),
@@ -159,7 +182,13 @@ export class LayoutView {
         const y1 = Math.max(p[0][1], p[1][1]);
         ctx.drawImage(getCanvas(), src.x, src.y, src.w, src.h, x0, y0, x1 - x0, y1 - y0);
         ctx.restore();
-        const hot = this.hover && this.hover.g === g && this.hover.r === r;
+        const hot = this.hover && this.hover.has(r * state.gores + g);
+        if (hot) {
+          ctx.fillStyle = hexOf(state.active);
+          ctx.globalAlpha = 0.55;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
         ctx.strokeStyle = hot ? '#e8541f' : line;
         ctx.lineWidth = hot ? 2.2 : 0.6;
         ctx.stroke();
@@ -178,9 +207,11 @@ export class LayoutView {
     }
     ctx.textAlign = 'right';
     for (let r = 0; r < u.rows; r++) {
-      const cell = u.cells[r];
       const [x] = this.toPx(0, 0);
-      const [, y] = this.toPx(0, (cell.yBot + cell.yTop) / 2);
+      const my = this.mode === 'grid'
+        ? (r + 0.5) * this.metrics.cell
+        : (u.cells[r].yBot + u.cells[r].yTop) / 2;
+      const [, y] = this.toPx(0, my);
       ctx.fillText(String(r + 1), x - 8, y + 3);
     }
   }
@@ -194,27 +225,36 @@ export class LayoutView {
     const footH = Math.round(24 * scale);
 
     // Масштаб подбираем от целевой ширины листа, а не от числа клиньев.
-    const totalW = (u.maxW + GAP) * u.gores - GAP;
-    const s = Math.min(1700 * scale / totalW, 900 * scale / u.goreLen);
+    const grid = this.mode === 'grid';
+    const pitch = grid ? u.maxW : u.maxW + GAP;
+    const totalW = grid ? pitch * u.gores : pitch * u.gores - GAP;
+    const totalH = grid ? u.maxW * u.rows : u.goreLen;
+    const s = Math.min(1700 * scale / totalW, 900 * scale / totalH);
 
     const c = document.createElement('canvas');
     c.width = Math.min(8000, Math.round(totalW * s) + pad * 2);
-    c.height = Math.min(8000, Math.round(u.goreLen * s) + pad * 2 + headH + footH);
+    c.height = Math.min(8000, Math.round(totalH * s) + pad * 2 + headH + footH);
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
 
     const x0 = pad;
     const y0 = pad + headH;
-    const px = (xm, ym) => [x0 + xm * s, y0 + (u.goreLen - ym) * s];
+    const px = (xm, ym) => [x0 + xm * s, y0 + (totalH - ym) * s];
 
     for (let g = 0; g < u.gores; g++) {
       for (let r = 0; r < u.rows; r++) {
         const cell = u.cells[r];
-        const cx = colOf(g, u.gores) * (u.maxW + GAP) + u.maxW / 2;
-        const p = [
-          px(cx - cell.wBot / 2, cell.yBot), px(cx + cell.wBot / 2, cell.yBot),
-          px(cx + cell.wTop / 2, cell.yTop), px(cx - cell.wTop / 2, cell.yTop),
-        ];
+        const col = colOf(g, u.gores);
+        const p = grid
+          ? [px(col * pitch, r * u.maxW), px((col + 1) * pitch, r * u.maxW),
+             px((col + 1) * pitch, (r + 1) * u.maxW), px(col * pitch, (r + 1) * u.maxW)]
+          : (() => {
+            const cx = col * pitch + u.maxW / 2;
+            return [
+              px(cx - cell.wBot / 2, cell.yBot), px(cx + cell.wBot / 2, cell.yBot),
+              px(cx + cell.wTop / 2, cell.yTop), px(cx - cell.wTop / 2, cell.yTop),
+            ];
+          })();
         ctx.beginPath(); ctx.moveTo(p[0][0], p[0][1]);
         for (let i = 1; i < 4; i++) ctx.lineTo(p[i][0], p[i][1]);
         ctx.closePath();
@@ -236,13 +276,13 @@ export class LayoutView {
     ctx.font = `600 ${Math.round(9 * scale)}px ui-monospace, Menlo, monospace`;
     ctx.textAlign = 'center';
     for (let c = 0; c < u.gores; c++) {
-      const [x] = px(c * (u.maxW + GAP) + u.maxW / 2, 0);
+      const [x] = px(c * pitch + (grid ? pitch : u.maxW) / 2, 0);
       ctx.fillText(String(c + 1), x, y0 - 5 * scale);
     }
     ctx.textAlign = 'right';
     for (let r = 0; r < u.rows; r++) {
-      const cell = u.cells[r];
-      const [, y] = px(0, (cell.yBot + cell.yTop) / 2);
+      const my = grid ? (r + 0.5) * u.maxW : (u.cells[r].yBot + u.cells[r].yTop) / 2;
+      const [, y] = px(0, my);
       ctx.fillText(String(r + 1), x0 - 4 * scale, y + 3 * scale);
     }
 

@@ -133,6 +133,12 @@ class App {
     document.getElementById('btnLayoutClose').addEventListener('click', () => this.setView('3d'));
     document.getElementById('btnPreviewExit').addEventListener('click', () => this.setView('3d'));
     document.getElementById('btnLayoutFit').addEventListener('click', () => this.layout.fit());
+    const modeBtn = document.getElementById('btnLayoutMode');
+    modeBtn.addEventListener('click', () => {
+      const grid = this.layout.mode !== 'grid';
+      this.layout.setMode(grid ? 'grid' : 'true');
+      modeBtn.textContent = grid ? 'Вид: таблица' : 'Вид: по ткани';
+    });
     document.getElementById('btnLayoutPNG').addEventListener('click', () => this.exportLayout());
 
     document.getElementById('btnCatalog').addEventListener('click', () =>

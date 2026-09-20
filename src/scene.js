@@ -118,9 +118,9 @@ export function rebuild() {
 
   const v = buildValve(env);
   valveMesh = new THREE.Mesh(v.geometry, new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.72, side: THREE.DoubleSide,
+    map: atlas.getValveTexture(), roughness: 0.72, side: THREE.DoubleSide,
   }));
-  valveMesh.userData = { kind: 'valve', ranges: v.ranges, segs: v.segs };
+  valveMesh.userData = { kind: 'valve', triZone: v.triZone, segs: v.segs };
   group.add(valveMesh);
 
   const spec = rigSpec(env);
@@ -290,7 +290,6 @@ export function applyColors() {
   }
   atlas.redrawBase(env);
 
-  paintRanges(valveMesh, state.valve);
   paintRanges(scoopMesh, state.scoop);
 
   tapeMesh.visible = state.tapes;
@@ -362,14 +361,15 @@ function onPointerDown(ev) {
 
   if (designMode) {
     const d = selectedDecal();
-    if (!d || hit.object.userData.kind !== 'envelope' || !hit.uv) return;
+    const want = d && d.target === 'valve' ? 'valve' : 'envelope';
+    if (!d || hit.object.userData.kind !== want || !hit.uv) return;
     // Тянем элемент прямо по оболочке: uv точки попадания — его новое место.
     ev.preventDefault();
     controls.enabled = false;
     mark();
     const move = (e) => {
       const h = hitEnvelope(e);
-      if (!h || h.object.userData.kind !== 'envelope' || !h.uv) return;
+      if (!h || h.object.userData.kind !== want || !h.uv) return;
       d.u = h.uv.x; d.v = h.uv.y;
       atlas.redrawBase(env);
       if (onPaint) onPaint();
@@ -411,6 +411,11 @@ export function affectedPanels(g, r, mode = state.paintMode) {
       // Диагональная полоса через всю оболочку: шаг один клин на ряд.
       const k = g - r;
       for (let j = 0; j < R; j++) add(((k + j) % G + G) % G, j);
+      break;
+    }
+    case 'diag2': {
+      const k = g + r;
+      for (let j = 0; j < R; j++) add(((k - j) % G + G) % G, j);
       break;
     }
     case 'all':  for (let j = 0; j < R; j++) for (let i = 0; i < G; i++) add(i, j); break;

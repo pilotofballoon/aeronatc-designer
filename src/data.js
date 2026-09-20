@@ -27,17 +27,9 @@ export const CATEGORIES = {
       'после каждого залпа горелки. Не любит скорость снижения более 3,5 м/с и не ' +
       'предназначена для крупной рекламы.',
   },
-  special: {
-    id: 'special',
-    label: 'Спецформа',
-    short: 'Оболочки специальной формы',
-    description:
-      'Любые виды и модели по желанию заказчика. Параметры и раскладка считаются ' +
-      'индивидуально — ниже приведены базовые заготовки под эскиз.',
-  },
 };
 
-export const CATEGORY_ORDER = ['classic', 'sport', 'oda', 'special'];
+export const CATEGORY_ORDER = ['classic', 'sport', 'oda'];
 
 // shape — профиль меридиана, см. geometry.js
 // gores — количество вертикальных клиньев, crew — людей на борту, mass — вес оболочки, кг
@@ -93,17 +85,6 @@ export const MODELS = [
     shape: 'oda', scheme: 'упрощённая',
     description: '12-дольная оболочка «ОДА» объёмом 2550 м³ с характерными широкими долями.' },
 
-  // Оболочки специальной формы
-  { id: 'sf-drop', code: 'СФ · капля', category: 'special', name: 'Спецформа «Капля»',
-    ax: 'АХ-8', volume: 2550, gores: 20, crew: 'по расчёту', mass: null,
-    basket: { w: 1.60, d: 1.05, label: '160×105 см' },
-    shape: 'drop', scheme: 'индивидуально', custom: true,
-    description: 'Базовая заготовка под спецформу: каплевидный силуэт, 20 клиньев.' },
-  { id: 'sf-barrel', code: 'СФ · бочка', category: 'special', name: 'Спецформа «Бочка»',
-    ax: 'АХ-9', volume: 3500, gores: 24, crew: 'по расчёту', mass: null,
-    basket: { w: 1.61, d: 1.22, label: '161×122 см' },
-    shape: 'barrel', scheme: 'индивидуально', custom: true,
-    description: 'Базовая заготовка под спецформу: цилиндрический корпус под крупную рекламу.' },
 ];
 
 export const getModel = (id) => MODELS.find((m) => m.id === id);

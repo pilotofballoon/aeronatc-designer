@@ -18,6 +18,7 @@ export const state = {
   gores: 24,
   rows: 18,
   valveSegs: 12,
+  valveZones: 24,
   panels: [],
   valve: [],
   scoop: [],
@@ -25,7 +26,7 @@ export const state = {
   mouth: 'P17',          // устарело: осталось для чтения старых проектов
   active: 'S06',
   secondary: 'S05',
-  paintMode: 'panel',      // panel | gore | row | ring | diag | all
+  paintMode: 'panel',      // panel | gore | row | ring | diag | diag2 | all
   gloss: 0.32,
   tapes: false,
   tapeColor: 'P15',
@@ -37,14 +38,15 @@ export const state = {
 
   decals: [],            // текст и изображения на оболочке, первый — верхний слой
   selected: null,        // id выбранного элемента дизайна
+  decalTarget: 'envelope', // куда добавляется следующий элемент
 };
 
 let decalSeq = 1;
 const nextId = () => `d${decalSeq++}`;
 
-export function addText(text = 'АэроНаТЦ') {
+export function addText(text = 'АэроНаТЦ', target = 'envelope') {
   const d = {
-    id: nextId(), type: 'text', text,
+    id: nextId(), type: 'text', text, target,
     u: 0.5, v: 0.5, size: 0.09, rot: 0, opacity: 1,
     color: 'S11', font: 'Inter, system-ui, sans-serif', bold: true,
     outline: false, outlineColor: 'S05',
@@ -54,9 +56,9 @@ export function addText(text = 'АэроНаТЦ') {
   return d;
 }
 
-export function addImage(src) {
+export function addImage(src, target = 'envelope') {
   const d = {
-    id: nextId(), type: 'image', src,
+    id: nextId(), type: 'image', src, target,
     u: 0.5, v: 0.5, size: 0.18, rot: 0, opacity: 1,
   };
   state.decals.unshift(d);
@@ -99,6 +101,7 @@ export function applyModel(modelId, keepColors = true) {
   state.gores = model.gores;
   state.rows = d.rows;
   state.valveSegs = vs.segs;
+  state.valveZones = vs.segs * 2;
 
   const next = fill(state.gores * state.rows, DEFAULT_COLOR);
   if (keepColors && oldPanels.length === oldG * oldR && oldPanels.length) {
@@ -113,7 +116,7 @@ export function applyModel(modelId, keepColors = true) {
   state.panels = next;
 
   const oldValve = state.valve;
-  state.valve = fill(state.valveSegs, oldValve[0] || DEFAULT_COLOR);
+  state.valve = fill(state.valveZones, oldValve[0] || DEFAULT_COLOR);
   const oldScoop = state.scoop;
   state.scoop = fill(SCOOP_SEGS, oldScoop[0] || state.mouth || 'P17');
 }
@@ -195,7 +198,7 @@ export function load(data) {
   if (Array.isArray(data.panels) && data.panels.length === state.gores * state.rows) {
     state.panels = data.panels;
   }
-  if (Array.isArray(data.valve) && data.valve.length === state.valveSegs) state.valve = data.valve;
+  if (Array.isArray(data.valve) && data.valve.length === state.valveZones) state.valve = data.valve;
   if (Array.isArray(data.scoop) && data.scoop.length === SCOOP_SEGS) state.scoop = data.scoop;
   else if (data.mouth) state.scoop = fill(SCOOP_SEGS, data.mouth); // проект версии 1
   state.tapes = !!data.tapes;

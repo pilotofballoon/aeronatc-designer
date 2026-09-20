@@ -22,12 +22,14 @@ const MODE_ICONS = {
   gore: '<rect x="4" y="3" width="6" height="18" rx="1.4" fill="currentColor"/><rect x="12" y="3" width="6" height="18" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   row: '<rect x="3" y="4" width="18" height="6" rx="1.4" fill="currentColor"/><rect x="3" y="12" width="18" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   ring: '<rect x="3" y="4" width="4" height="6" rx="1" fill="currentColor"/><rect x="10" y="4" width="4" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="17" y="4" width="4" height="6" rx="1" fill="currentColor"/><rect x="3" y="13" width="4" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="10" y="13" width="4" height="6" rx="1" fill="currentColor"/><rect x="17" y="13" width="4" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>',
-  diag: '<path d="M3 15.5 15.5 3h5.5v5.5L8.5 21H3z" fill="currentColor"/><path d="M3 21 21 3" stroke="currentColor" stroke-width="1.2" opacity=".35"/>',
+  diag: '<path d="M3 15.5 15.5 3h5.5v5.5L8.5 21H3z" fill="currentColor"/>',
+  diag2: '<path d="M21 15.5 8.5 3H3v5.5L15.5 21H21z" fill="currentColor"/>',
   all: '<circle cx="12" cy="12" r="8.4" fill="currentColor"/>',
 };
 const MODES = [
   ['panel', 'Полотнище'], ['gore', 'Клин'], ['row', 'Ряд'],
-  ['ring', 'Через один'], ['diag', 'Диагональ'], ['all', 'Всё'],
+  ['ring', 'Через один'], ['diag', 'Диагональ'], ['diag2', 'Обратная'],
+  ['all', 'Всё'],
 ];
 
 export class UI {
@@ -151,10 +153,10 @@ export class UI {
         </div>
         <label class="switch" style="margin-top:8px">
           <input type="checkbox" id="linkBottom" ${state.linkBottom ? 'checked' : ''}>
-          Нижний ряд оболочки — той же тканью</label>
-        <p class="hint">Фартук из 5 клиньев занимает полокружности со стороны широкой грани
-          гондолы и крепится к стойкам рамы. Каждый клин красится отдельно — кликом по 3D.
-          Нижний ряд полотнищ кроится из той же ткани, поэтому по умолчанию следует за фартуком.</p>
+          Юбка (нижний ряд) — той же тканью</label>
+        <p class="hint">Воздухозаборник из 5 клиньев занимает полокружности со стороны
+          широкой грани гондолы и крепится к стойкам рамы. Юбка — нижний ряд самой оболочки,
+          её кроят из той же ткани, поэтому по умолчанию она следует за воздухозаборником.</p>
       </div>
 
       <div class="section">
@@ -244,7 +246,8 @@ export class UI {
       ? state.decals.map((it) => `
         <div class="ditem${it.id === state.selected ? ' is-active' : ''}" data-id="${it.id}">
           <span class="thumb">${it.type === 'image' ? `<img src="${it.src}" alt="">` : 'Aa'}</span>
-          <span class="name">${esc(it.type === 'text' ? it.text : 'изображение')}</span>
+          <span class="name">${esc(it.type === 'text' ? it.text : 'изображение')}${
+            it.target === 'valve' ? ' · клапан' : ''}</span>
           <span class="ops">
             <button data-op="up" title="Выше">&uarr;</button>
             <button data-op="down" title="Ниже">&darr;</button>
@@ -256,6 +259,10 @@ export class UI {
     this.body.innerHTML = `
       <div class="section rows">
         <h4>Добавить</h4>
+        <div class="grid2" style="margin-bottom:8px">
+          <button class="btn${state.decalTarget !== 'valve' ? ' primary' : ''}" data-target="envelope">На оболочку</button>
+          <button class="btn${state.decalTarget === 'valve' ? ' primary' : ''}" data-target="valve">На клапан</button>
+        </div>
         <div class="grid2">
           <button class="btn" id="addText">Текст</button>
           <button class="btn" id="addImg">Изображение</button>
@@ -274,7 +281,15 @@ export class UI {
 
     const app = this.app;
     this.body.querySelector('#addText').addEventListener('click', () => {
-      mark(); addText(); commit('decal-add'); this.renderDesign(); app.refreshAll();
+      mark(); addText('АэроНаТЦ', state.decalTarget); commit('decal-add');
+      this.renderDesign(); app.refreshAll();
+    });
+
+    this.body.querySelectorAll('[data-target]').forEach((b) => {
+      b.addEventListener('click', () => {
+        state.decalTarget = b.dataset.target;
+        touch('target'); this.renderDesign();
+      });
     });
 
     const file = this.body.querySelector('#fileImg');
@@ -285,7 +300,7 @@ export class UI {
       if (f.size > 4 * 1024 * 1024) { alert('Файл больше 4 МБ — возьмите полегче.'); return; }
       const rd = new FileReader();
       rd.onload = () => {
-        mark(); addImage(rd.result); commit('decal-add');
+        mark(); addImage(rd.result, state.decalTarget); commit('decal-add');
         this.renderDesign(); app.refreshAll();
       };
       rd.readAsDataURL(f);
@@ -412,14 +427,18 @@ export class UI {
     this.body.innerHTML = `
       <div class="section">
         <h4>Парашютный клапан</h4>
-        <p class="hint" style="margin-top:0">Клапан собран из ${state.valveSegs} секторов.
-          Выберите цвет и кликайте по секторам на 3D-модели — или залейте целиком.</p>
+        <p class="hint" style="margin-top:0">Клапан круглый и лежит внутри оболочки, чуть шире
+          отверстия в куполе. Собран из ${state.valveSegs} прямоугольников по внешнему поясу
+          и ${state.valveSegs} длинных клиньев внутри — всего ${state.valveZones} зон.
+          Кликайте по ним на 3D или залейте целиком.</p>
       </div>
       ${this.activeColorCard()}
       <div id="palette">${this.swatchesHTML()}</div>
       <div class="section rows">
         <button class="btn block" id="fillValve">Залить весь клапан</button>
-        <button class="btn block" id="altValve">Залить через сектор</button>
+        <button class="btn block" id="altValve">Залить через клин</button>
+        <button class="btn block" id="fillRing">Залить внешний пояс</button>
+        <button class="btn block" id="fillCore">Залить клинья</button>
       </div>
       <div class="section">
         <h4>Вид сверху</h4>
@@ -437,7 +456,19 @@ export class UI {
     });
     this.body.querySelector('#altValve').addEventListener('click', () => {
       mark();
-      state.valve = state.valve.map((c, i) => (i % 2 ? state.secondary : state.active));
+      const n = state.valveSegs;
+      state.valve = state.valve.map((c, i) => ((i % n) % 2 ? state.secondary : state.active));
+      commit('valve'); this.app.refreshAll();
+    });
+    this.body.querySelector('#fillRing').addEventListener('click', () => {
+      mark();
+      for (let i = 0; i < state.valveSegs; i++) state.valve[i] = state.active;
+      commit('valve'); this.app.refreshAll();
+    });
+    this.body.querySelector('#fillCore').addEventListener('click', () => {
+      mark();
+      const n = state.valveSegs;
+      for (let i = 0; i < n; i++) state.valve[n + i] = state.active;
       commit('valve'); this.app.refreshAll();
     });
     this.drawValveTop();
@@ -446,17 +477,23 @@ export class UI {
   drawValveTop() {
     const host = this.body.querySelector('#valveTop');
     if (!host) return;
-    const n = state.valveSegs, R = 62, C = 70;
-    const segs = state.valve.map((code, i) => {
+    const n = state.valveSegs, R = 62, RING = R * 0.72, C = 70;
+    const p = (a, r) => `${(C + r * Math.cos(a)).toFixed(1)},${(C + r * Math.sin(a)).toFixed(1)}`;
+    const sector = (i, r0, r1, code) => {
       const a0 = (i / n) * Math.PI * 2 - Math.PI / 2;
       const a1 = ((i + 1) / n) * Math.PI * 2 - Math.PI / 2;
-      const p = (a, r) => `${(C + r * Math.cos(a)).toFixed(1)},${(C + r * Math.sin(a)).toFixed(1)}`;
-      return `<path d="M${C},${C}L${p(a0, R)}A${R},${R} 0 0 1 ${p(a1, R)}Z"
-        fill="${hexOf(code)}" stroke="rgba(0,0,0,.28)" stroke-width="0.7"/>`;
-    }).join('');
-    host.innerHTML = `<svg viewBox="0 0 140 140" width="150" height="150">${segs}
+      const inner = r0 > 0
+        ? `L${p(a1, r0)}A${r0},${r0} 0 0 0 ${p(a0, r0)}Z`
+        : `L${C},${C}Z`;
+      return `<path d="M${p(a0, r1)}A${r1},${r1} 0 0 1 ${p(a1, r1)}${inner}"
+        fill="${hexOf(code)}" stroke="rgba(0,0,0,.3)" stroke-width="0.7"/>`;
+    };
+    let out = '';
+    for (let i = 0; i < n; i++) out += sector(i, RING, R, state.valve[i]);
+    for (let i = 0; i < n; i++) out += sector(i, 0, RING, state.valve[n + i]);
+    host.innerHTML = `<svg viewBox="0 0 140 140" width="150" height="150">${out}
       <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1.2"/>
-      <circle cx="${C}" cy="${C}" r="8" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1.2"/></svg>`;
+      <circle cx="${C}" cy="${C}" r="${RING}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1"/></svg>`;
   }
 
   renderFabric() {

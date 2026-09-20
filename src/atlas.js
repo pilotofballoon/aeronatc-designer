@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { hexOf } from './data.js';
+import { VALVE_RING } from './geometry.js';
 import { state } from './state.js';
 
 export const ATLAS_W = 2048;
@@ -13,6 +14,12 @@ let base = null;   // цвета полотнищ + дизайн
 let out = null;    // base + подсветка при наведении
 let texture = null;
 let hover = null;  // Set номеров полотнищ
+
+// Клапан живёт на своей квадратной развёртке: он круглый, и общий атлас
+// оболочки для него не годится.
+export const VALVE_PX = 768;
+let valveCanvas = null;
+let valveTexture = null;
 
 // Картинки декалей кешируем по id: перерисовка атласа идёт часто.
 const images = new Map();
@@ -37,6 +44,55 @@ function ensure() {
 }
 
 export function getTexture() { ensure(); return texture; }
+
+function ensureValve() {
+  if (valveCanvas) return;
+  valveCanvas = document.createElement('canvas');
+  valveCanvas.width = VALVE_PX; valveCanvas.height = VALVE_PX;
+  valveTexture = new THREE.CanvasTexture(valveCanvas);
+  valveTexture.colorSpace = THREE.SRGBColorSpace;
+  valveTexture.anisotropy = 8;
+}
+
+export function getValveTexture() { ensureValve(); return valveTexture; }
+
+/**
+ * Развёртка клапана: внешний пояс прямоугольников, длинные клинья внутри,
+ * поверх — дизайн, привязанный к клапану.
+ */
+export function redrawValve(env) {
+  ensureValve();
+  const g = valveCanvas.getContext('2d');
+  const C = VALVE_PX / 2;
+  const R = VALVE_PX / 2;
+  const segs = state.valveSegs;
+
+  g.clearRect(0, 0, VALVE_PX, VALVE_PX);
+
+  const sector = (r0, r1, s, code) => {
+    // Развёртка отражена по вертикали при загрузке, поэтому углы берём со знаком минус.
+    const a0 = -((s + 1) / segs) * Math.PI * 2;
+    const a1 = -(s / segs) * Math.PI * 2;
+    g.beginPath();
+    g.arc(C, C, r1, a0, a1);
+    if (r0 > 0) g.arc(C, C, r0, a1, a0, true);
+    else g.lineTo(C, C);
+    g.closePath();
+    g.fillStyle = hexOf(code);
+    g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.18)';
+    g.lineWidth = 1.5;
+    g.stroke();
+  };
+
+  for (let s2 = 0; s2 < segs; s2++) sector(R * VALVE_RING, R, s2, state.valve[s2]);
+  for (let s2 = 0; s2 < segs; s2++) sector(0, R * VALVE_RING, s2, state.valve[segs + s2]);
+
+  const list = state.decals.filter((d) => d.target === 'valve');
+  for (let i = list.length - 1; i >= 0; i--) drawDecal(g, list[i], env, VALVE_PX, VALVE_PX, 1);
+
+  valveTexture.needsUpdate = true;
+}
 export function getCanvas() { ensure(); return out; }
 
 /** Пиксели холста для полотнища (клин g, ряд r). v = 0 у горловины. */
@@ -72,10 +128,10 @@ function aspectK(env) {
   return (circ * ATLAS_H) / (arc * ATLAS_W);
 }
 
-function drawDecal(g, d, env) {
-  const k = aspectK(env);
-  const x = (1 - d.u) * ATLAS_W;
-  const y = (1 - d.v) * ATLAS_H;
+function drawDecal(g, d, env, W = ATLAS_W, H = ATLAS_H, kOverride = null) {
+  const k = kOverride === null ? aspectK(env) : kOverride;
+  const x = (1 - d.u) * W;
+  const y = (1 - d.v) * H;
 
   const paint = (ox) => {
     g.save();
@@ -84,7 +140,7 @@ function drawDecal(g, d, env) {
     g.globalAlpha = d.opacity;
 
     if (d.type === 'text') {
-      const px = d.size * ATLAS_H;
+      const px = d.size * H;
       g.font = `${d.bold ? '700 ' : ''}${px}px ${d.font}`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
@@ -100,7 +156,7 @@ function drawDecal(g, d, env) {
     } else {
       const img = imageFor(d);
       if (img) {
-        const w = d.size * ATLAS_W;
+        const w = d.size * W;
         const h = w * (img.naturalHeight / img.naturalWidth) * k;
         g.drawImage(img, -w / 2, -h / 2, w, h);
       }
@@ -111,8 +167,10 @@ function drawDecal(g, d, env) {
   // Развёртка замкнута по кругу — рисуем ещё два раза со сдвигом, чтобы
   // элемент на стыке не обрезался.
   paint(0);
-  if (x < ATLAS_W * 0.25) paint(ATLAS_W);
-  if (x > ATLAS_W * 0.75) paint(-ATLAS_W);
+  if (W === ATLAS_W) {
+    if (x < W * 0.25) paint(W);
+    if (x > W * 0.75) paint(-W);
+  }
 }
 
 /** Перерисовать базовый холст: полотнища, затем дизайн снизу вверх по списку. */
@@ -130,8 +188,10 @@ export function redrawBase(env) {
   }
 
   // Последний в списке — самый верхний слой, поэтому идём с конца.
-  for (let i = state.decals.length - 1; i >= 0; i--) drawDecal(g, state.decals[i], env);
+  const list = state.decals.filter((d) => d.target !== 'valve');
+  for (let i = list.length - 1; i >= 0; i--) drawDecal(g, list[i], env);
 
+  redrawValve(env);
   redrawOut();
 }
 
