@@ -428,9 +428,12 @@ export class UI {
       <div class="section">
         <h4>Парашютный клапан</h4>
         <p class="hint" style="margin-top:0">Клапан круглый и лежит внутри оболочки, чуть шире
-          отверстия в куполе. Собран из ${state.valveSegs} прямоугольников по внешнему поясу
-          и ${state.valveSegs} длинных клиньев внутри — всего ${state.valveZones} зон.
-          Кликайте по ним на 3D или залейте целиком.</p>
+          отверстия в куполе. Клиньев в нём столько же, сколько в оболочке — ${state.valveSegs}.
+          ${state.valveRing
+            ? `Каждый собран из прямоугольника внешнего пояса и длинного клина внутри,
+               всего ${state.valveZones} зон.`
+            : 'Клин идёт одним фрагментом на всю глубину — спортивный крой.'}
+          Кликайте по зонам на 3D или залейте целиком.</p>
       </div>
       ${this.activeColorCard()}
       <div id="palette">${this.swatchesHTML()}</div>
@@ -438,8 +441,9 @@ export class UI {
         <button class="btn block primary" id="valveTopView">Посмотреть сверху</button>
         <button class="btn block" id="fillValve">Залить весь клапан</button>
         <button class="btn block" id="altValve">Залить через клин</button>
+        ${state.valveRing ? `
         <button class="btn block" id="fillRing">Залить внешний пояс</button>
-        <button class="btn block" id="fillCore">Залить клинья</button>
+        <button class="btn block" id="fillCore">Залить клинья</button>` : ''}
       </div>
       <div class="section">
         <h4>Вид сверху</h4>
@@ -464,17 +468,20 @@ export class UI {
       state.valve = state.valve.map((c, i) => ((i % n) % 2 ? state.secondary : state.active));
       commit('valve'); this.app.refreshAll();
     });
-    this.body.querySelector('#fillRing').addEventListener('click', () => {
-      mark();
-      for (let i = 0; i < state.valveSegs; i++) state.valve[i] = state.active;
-      commit('valve'); this.app.refreshAll();
-    });
-    this.body.querySelector('#fillCore').addEventListener('click', () => {
-      mark();
-      const n = state.valveSegs;
-      for (let i = 0; i < n; i++) state.valve[n + i] = state.active;
-      commit('valve'); this.app.refreshAll();
-    });
+    const fillRing = this.body.querySelector('#fillRing');
+    if (fillRing) {
+      fillRing.addEventListener('click', () => {
+        mark();
+        for (let i = 0; i < state.valveSegs; i++) state.valve[i] = state.active;
+        commit('valve'); this.app.refreshAll();
+      });
+      this.body.querySelector('#fillCore').addEventListener('click', () => {
+        mark();
+        const n = state.valveSegs;
+        for (let i = 0; i < n; i++) state.valve[n + i] = state.active;
+        commit('valve'); this.app.refreshAll();
+      });
+    }
     this.drawValveTop();
   }
 
@@ -493,11 +500,17 @@ export class UI {
         fill="${hexOf(code)}" stroke="rgba(0,0,0,.3)" stroke-width="0.7"/>`;
     };
     let out = '';
-    for (let i = 0; i < n; i++) out += sector(i, RING, R, state.valve[i]);
-    for (let i = 0; i < n; i++) out += sector(i, 0, RING, state.valve[n + i]);
+    if (state.valveRing) {
+      for (let i = 0; i < n; i++) out += sector(i, RING, R, state.valve[i]);
+      for (let i = 0; i < n; i++) out += sector(i, 0, RING, state.valve[n + i]);
+    } else {
+      for (let i = 0; i < n; i++) out += sector(i, 0, R, state.valve[i]);
+    }
     host.innerHTML = `<svg viewBox="0 0 140 140" width="150" height="150">${out}
       <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1.2"/>
-      <circle cx="${C}" cy="${C}" r="${RING}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1"/></svg>`;
+      ${state.valveRing
+        ? `<circle cx="${C}" cy="${C}" r="${RING}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1"/>`
+        : ''}</svg>`;
   }
 
   renderFabric() {

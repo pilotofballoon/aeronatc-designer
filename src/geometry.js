@@ -305,10 +305,13 @@ export function buildTapes(env) {
  */
 export function valveSpec(env) {
   const d = env.dims;
-  const segs = Math.max(6, Math.round(env.gores / 2));
   const top = d.prof[d.prof.length - 1];      // точка среза купола
   return {
-    segs,
+    // Клиньев в клапане столько же, сколько клиньев в оболочке.
+    segs: env.gores,
+    // У спортивных оболочек клин идёт одним фрагментом на всю глубину,
+    // у остальных форм есть ещё внешний пояс прямоугольников.
+    ring: d.shape !== 'sport',
     radius: VALVE_R * d.R,
     hole: CROWN_R * d.R,
     y: top[0] * d.H - d.H * 0.018,            // чуть ниже кромки — внутри
@@ -318,7 +321,7 @@ export function valveSpec(env) {
 export const VALVE_RING = 0.72;   // доля радиуса, где кончаются клинья
 
 export function buildValve(env) {
-  const { segs, radius, y } = valveSpec(env);
+  const { segs, radius, y, ring } = valveSpec(env);
   const ANG = 5;                   // дробление по дуге для гладкого круга
   const RAD = 3;                   // дробление клина по радиусу
   const sag = radius * 0.13;       // провис ткани внутрь
@@ -358,17 +361,21 @@ export function buildValve(env) {
     }
   };
 
-  // Сначала внешний пояс: по сути прямоугольники по краю клапана.
-  band(VALVE_RING, 1);
-  // Затем длинные клинья от пояса к центру.
-  band(0, VALVE_RING);
+  if (ring) {
+    // Сначала внешний пояс: по сути прямоугольники по краю клапана.
+    band(VALVE_RING, 1);
+    // Затем длинные клинья от пояса к центру.
+    band(0, VALVE_RING);
+  } else {
+    band(0, 1);
+  }
 
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.setIndex(idx);
-  return { geometry: g, ranges, triZone, segs, zones: ranges.length };
+  return { geometry: g, ranges, triZone, segs, ring, zones: ranges.length };
 }
 
 /** Габариты подвески: гондола из каталога, рама и стойки типовые. */

@@ -17,8 +17,9 @@ export const state = {
   modelId: 'kl-2550',
   gores: 24,
   rows: 18,
-  valveSegs: 12,
-  valveZones: 24,
+  valveSegs: 24,
+  valveRing: true,
+  valveZones: 48,
   panels: [],
   valve: [],
   scoop: [],
@@ -101,7 +102,8 @@ export function applyModel(modelId, keepColors = true) {
   state.gores = model.gores;
   state.rows = d.rows;
   state.valveSegs = vs.segs;
-  state.valveZones = vs.segs * 2;
+  state.valveRing = vs.ring;
+  state.valveZones = vs.segs * (vs.ring ? 2 : 1);
 
   const next = fill(state.gores * state.rows, DEFAULT_COLOR);
   if (keepColors && oldPanels.length === oldG * oldR && oldPanels.length) {

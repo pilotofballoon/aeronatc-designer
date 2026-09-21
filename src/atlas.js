@@ -86,12 +86,17 @@ export function redrawValve(env) {
     g.stroke();
   };
 
-  for (let s2 = 0; s2 < segs; s2++) sector(R * VALVE_RING, R, s2, state.valve[s2]);
-  for (let s2 = 0; s2 < segs; s2++) sector(0, R * VALVE_RING, s2, state.valve[segs + s2]);
+  if (state.valveRing) {
+    for (let s2 = 0; s2 < segs; s2++) sector(R * VALVE_RING, R, s2, state.valve[s2]);
+    for (let s2 = 0; s2 < segs; s2++) sector(0, R * VALVE_RING, s2, state.valve[segs + s2]);
+  } else {
+    for (let s2 = 0; s2 < segs; s2++) sector(0, R, s2, state.valve[s2]);
+  }
 
   if (valveHover !== null && valveHover !== undefined) {
-    const r0 = valveHover < segs ? R * VALVE_RING : 0;
-    const r1 = valveHover < segs ? R : R * VALVE_RING;
+    const outer = state.valveRing && valveHover < segs;
+    const r0 = state.valveRing ? (outer ? R * VALVE_RING : 0) : 0;
+    const r1 = state.valveRing ? (outer ? R : R * VALVE_RING) : R;
     const c = new THREE.Color(hexOf(state.active));
     g.save();
     g.globalAlpha = 0.55;
