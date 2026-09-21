@@ -378,8 +378,7 @@ function onPointerMove(ev) {
     const panel = env.triPanel[hit.faceIndex];
     const g = panel % state.gores;
     const r = Math.floor(panel / state.gores);
-    if (state.linkBottom && r === 0) atlas.setHover(new Set([panel]));
-    else atlas.setHover(affectedPanels(g, r));
+    atlas.setHover(affectedPanels(g, r));
   } else if (kind === 'valve') {
     clearHover('valve');
     atlas.setValveHover(valveMesh.userData.triZone[hit.faceIndex]);
@@ -404,13 +403,8 @@ function paintHit(kind, faceIndex) {
     const panel = env.triPanel[faceIndex];
     const g = panel % state.gores;
     const r = Math.floor(panel / state.gores);
-    if (state.linkBottom && r === 0 && state.paintMode !== 'all') {
-      // Юбка кроится из ткани воздухозаборника — красим сам воздухозаборник.
-      state.scoop[scoopSegForGore(g, state.gores)] = code;
-    } else {
-      paintPanel(g, r, code);
-      if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
-    }
+    paintPanel(g, r, code);
+    if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
   } else if (kind === 'valve') {
     const zone = valveMesh.userData.triZone[faceIndex];
     if (state.paintMode === 'all') state.valve = state.valve.map(() => code);

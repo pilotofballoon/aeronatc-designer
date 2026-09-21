@@ -1,6 +1,6 @@
 // Состояние проекта: модель, карта цветов, история, сохранение.
 
-import { DEFAULT_COLOR, getModel, MODELS } from './data.js';
+import { DEFAULT_COLOR, SKIRT_COLOR, getModel, MODELS } from './data.js';
 import { dims, valveSpec, SCOOP_SEGS } from './geometry.js';
 
 const STORAGE_KEY = 'aeronatc.designer.v1';
@@ -23,7 +23,7 @@ export const state = {
   panels: [],
   valve: [],
   scoop: [],
-  linkBottom: true,      // нижний ряд кроится из ткани воздухозаборника
+  linkBottom: false,     // связать юбку с воздухозаборником (по умолчанию нет)
   mouth: 'P17',          // устарело: осталось для чтения старых проектов
   active: 'S06',
   secondary: 'S05',
@@ -106,6 +106,9 @@ export function applyModel(modelId, keepColors = true) {
   state.valveZones = vs.segs * (vs.ring ? 2 : 1);
 
   const next = fill(state.gores * state.rows, DEFAULT_COLOR);
+  // Юбку сразу отдаём тканью воздухозаборника — как на заводе, но красится
+  // она дальше сама по себе, по одному полотнищу.
+  for (let g = 0; g < state.gores; g++) next[g] = SKIRT_COLOR;
   if (keepColors && oldPanels.length === oldG * oldR && oldPanels.length) {
     for (let j = 0; j < state.rows; j++) {
       for (let g = 0; g < state.gores; g++) {

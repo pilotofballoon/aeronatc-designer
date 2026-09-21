@@ -159,6 +159,7 @@ export const hexOf = (code) => (COLOR_INDEX.get(code) || { hex: '#D8D8D8' }).hex
 export const ALL_COLORS = [...COLOR_INDEX.values()];
 
 export const DEFAULT_COLOR = 'S05'; // белый силикон
+export const SKIRT_COLOR = 'P17';   // тёмная ткань юбки и воздухозаборника
 
 // Памятка АэроНаТЦ
 export const MEMO = {

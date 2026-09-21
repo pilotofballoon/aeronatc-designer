@@ -407,16 +407,18 @@ export const SCOOP_SEGS = 5;
 export function buildScoop(env, rig) {
   const { ux, uz, yFrame, mouthR } = rig;
   const rows = 4;
-  const zAttach = -uz - 0.08;
+  // Фартук смотрит на +Z — в сторону рабочего ракурса камеры, иначе по нему
+  // не попасть мышью, он оказывается на дальней стороне.
+  const zAttach = uz + 0.08;
   const pos = [], nor = [], col = [], idx = [];
   const ranges = [];
   let v = 0;
 
-  // u = 0..1 вдоль дуги от -X через -Z к +X — это и есть широкая сторона гондолы.
+  // u = 0..1 вдоль дуги от +X через +Z к -X — это и есть широкая сторона гондолы.
   const point = (u, t) => {
-    const a = Math.PI + u * Math.PI;
+    const a = u * Math.PI;
     const tx = mouthR * Math.cos(a), tz = mouthR * Math.sin(a);
-    const bx = lerp(-ux, ux, u), bz = zAttach;
+    const bx = lerp(ux, -ux, u), bz = zAttach;
     const bulge = 1 + 0.1 * Math.sin(Math.PI * t) * (1 - Math.abs(2 * u - 1));
     return new THREE.Vector3(
       lerp(tx, bx, t) * bulge,
@@ -460,10 +462,9 @@ export function buildScoop(env, rig) {
  */
 export function scoopSegForGore(g, gores) {
   const a = ((g + 0.5) / gores) * Math.PI * 2;
-  let da = a - Math.PI;                        // 0..PI внутри дуги фартука
-  if (da < 0) da += Math.PI * 2;
-  if (da > Math.PI) return da > Math.PI * 1.5 ? 0 : SCOOP_SEGS - 1;
-  return Math.min(SCOOP_SEGS - 1, Math.floor((da / Math.PI) * SCOOP_SEGS));
+  // Вне дуги фартука берём ближний край.
+  if (a > Math.PI) return a > Math.PI * 1.5 ? 0 : SCOOP_SEGS - 1;
+  return Math.min(SCOOP_SEGS - 1, Math.floor((a / Math.PI) * SCOOP_SEGS));
 }
 
 /** Контур модели для карточки каталога: силуэт + сетка клиньев и рядов. */

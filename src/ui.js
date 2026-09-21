@@ -8,7 +8,7 @@ import {
   state, PRESETS, applyPreset, mark, commit, touch, spec,
   addText, addImage, selectedDecal, removeDecal, reorderDecal,
 } from './state.js';
-import { silhouette } from './geometry.js';
+import { silhouette, scoopSegForGore } from './geometry.js';
 
 const el = (html) => {
   const t = document.createElement('template');
@@ -146,17 +146,28 @@ export class UI {
       </div>
 
       <div class="section">
+        <h4>Юбка</h4>
+        <div class="rows">
+          <button class="btn block" id="fillSkirt">Залить юбку активным цветом</button>
+          <button class="btn block" id="altSkirt">Залить юбку через один</button>
+        </div>
+        <p class="hint">Юбка — нижний ряд самой оболочки. Кликайте по её полотнищам
+          на 3D: каждое красится отдельно, как и любое другое полотнище.</p>
+      </div>
+
+      <div class="section">
         <h4>Воздухозаборник</h4>
         <div class="rows">
           <button class="btn block" id="fillScoop">Залить воздухозаборник</button>
           <button class="btn block" id="altScoop">Залить через клин</button>
+          <button class="btn block" id="skirtLikeScoop">Юбку — тканью воздухозаборника</button>
         </div>
         <label class="switch" style="margin-top:8px">
           <input type="checkbox" id="linkBottom" ${state.linkBottom ? 'checked' : ''}>
-          Юбка (нижний ряд) — той же тканью</label>
-        <p class="hint">Воздухозаборник из 5 клиньев занимает полокружности со стороны
-          широкой грани гондолы и крепится к стойкам рамы. Юбка — нижний ряд самой оболочки,
-          её кроят из той же ткани, поэтому по умолчанию она следует за воздухозаборником.</p>
+          Держать юбку и воздухозаборник одной тканью</label>
+        <p class="hint">Широкая центральная часть и клинья по бокам — каждый кусок
+          красится кликом на 3D. Юбку и воздухозаборник обычно кроят из одной ткани,
+          но красятся они по отдельности.</p>
       </div>
 
       <div class="section">
@@ -206,6 +217,26 @@ export class UI {
       this.renderBody();
     });
 
+    this.body.querySelector('#fillSkirt').addEventListener('click', () => {
+      mark();
+      for (let g = 0; g < state.gores; g++) state.panels[g] = state.active;
+      commit('skirt'); app.refreshAll();
+    });
+    this.body.querySelector('#altSkirt').addEventListener('click', () => {
+      mark();
+      for (let g = 0; g < state.gores; g++) {
+        state.panels[g] = g % 2 ? state.secondary : state.active;
+      }
+      commit('skirt'); app.refreshAll();
+    });
+    this.body.querySelector('#skirtLikeScoop').addEventListener('click', () => {
+      mark();
+      for (let g = 0; g < state.gores; g++) {
+        state.panels[g] = state.scoop[scoopSegForGore(g, state.gores)];
+      }
+      commit('skirt'); app.refreshAll();
+    });
+
     this.body.querySelector('#linkBottom').addEventListener('change', (e) => {
       mark(); state.linkBottom = e.target.checked; commit('link'); app.refreshAll();
     });
@@ -235,6 +266,7 @@ export class UI {
       state.panels = state.panels.map(() => 'S05');
       state.valve = state.valve.map(() => 'S05');
       state.scoop = state.scoop.map(() => 'P17');
+      for (let g = 0; g < state.gores; g++) state.panels[g] = 'P17';
       commit('reset'); app.refreshAll();
     });
   }
