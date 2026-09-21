@@ -130,7 +130,8 @@ export function rebuild() {
   scoopMesh = new THREE.Mesh(sc.geometry, new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 0.82, side: THREE.DoubleSide,
   }));
-  scoopMesh.userData = { kind: 'scoop', ranges: sc.ranges };
+  // У каждого клина фартука sc.rows четырёхугольников, то есть вдвое больше треугольников.
+  scoopMesh.userData = { kind: 'scoop', ranges: sc.ranges, triPerSeg: sc.rows * 2 };
   group.add(scoopMesh);
 
   buildBasketRig(spec);
@@ -353,6 +354,37 @@ function onPointerMove(ev) {
 }
 
 function onPointerLeave() { atlas.setHover(null); }
+
+/** Покрасить то, во что попал клик. */
+function paintHit(kind, faceIndex) {
+  mark();
+  const code = state.active;
+
+  if (kind === 'envelope') {
+    const panel = env.triPanel[faceIndex];
+    const g = panel % state.gores;
+    const r = Math.floor(panel / state.gores);
+    if (state.linkBottom && r === 0 && state.paintMode !== 'all') {
+      // Юбка кроится из ткани воздухозаборника — красим сам воздухозаборник.
+      state.scoop[scoopSegForGore(g, state.gores)] = code;
+    } else {
+      paintPanel(g, r, code);
+      if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
+    }
+  } else if (kind === 'valve') {
+    const zone = valveMesh.userData.triZone[faceIndex];
+    if (state.paintMode === 'all') state.valve = state.valve.map(() => code);
+    else if (zone !== undefined) state.valve[zone] = code;
+  } else if (kind === 'scoop') {
+    const seg = Math.floor(faceIndex / scoopMesh.userData.triPerSeg);
+    if (state.paintMode === 'all') state.scoop = state.scoop.map(() => code);
+    else state.scoop[Math.min(seg, state.scoop.length - 1)] = code;
+  }
+
+  applyColors();
+  commit('paint');
+  if (onPaint) onPaint();
+}
 
 function onPointerDown(ev) {
   if (ev.button !== 0) return;

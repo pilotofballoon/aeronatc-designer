@@ -115,15 +115,17 @@ class App {
     this.resize();
   }
 
+  /**
+   * Два состояния фона: небо с облаками и полями — либо нейтральная заливка.
+   * Картинку снимаем именно через inline-стиль: он перекрывает фон из CSS,
+   * и без сброса небо оставалось на месте после выключения.
+   */
   applySky(force) {
-    const on = force || this.sky;
+    const on = !!(force || this.sky);
     scene.setBackground(on ? 'sky' : null);
-    if (on && !this.backdropSet) {
-      backdropImage();                                   // прогрев для экспорта
-      this.stage.style.backgroundImage = `url(${backdropURL()})`;
-      this.backdropSet = true;
-    }
-    this.stage.classList.toggle('sky', !!on);
+    if (on) backdropImage();                             // прогрев для экспорта
+    this.stage.style.backgroundImage = on ? `url(${backdropURL()})` : '';
+    this.stage.classList.toggle('sky', on);
   }
 
   bindChrome() {
@@ -171,6 +173,7 @@ class App {
     skyBtn.addEventListener('click', () => {
       this.sky = !this.sky;
       skyBtn.classList.toggle('is-on', this.sky);
+      skyBtn.title = this.sky ? 'Нейтральный фон' : 'Небо с облаками и полями';
       this.applySky();
     });
 

@@ -441,7 +441,7 @@ export function buildScoop(env, rig) {
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
-  return { geometry: g, ranges, segs: SCOOP_SEGS };
+  return { geometry: g, ranges, segs: SCOOP_SEGS, rows };
 }
 
 /**
