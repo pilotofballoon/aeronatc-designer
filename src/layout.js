@@ -34,7 +34,9 @@ export class LayoutView {
 
     c.addEventListener('pointerdown', (e) => {
       dragging = true; moved = false; last = { x: e.clientX, y: e.clientY };
-      c.setPointerCapture(e.pointerId);
+      // Захват указателя — не критичен: на части устройств и при синтетических
+      // событиях его нет, и падать из-за этого нельзя.
+      try { c.setPointerCapture(e.pointerId); } catch (err) { /* нет активного указателя */ }
     });
     c.addEventListener('pointermove', (e) => {
       const rect = c.getBoundingClientRect();
