@@ -435,6 +435,7 @@ export class UI {
       ${this.activeColorCard()}
       <div id="palette">${this.swatchesHTML()}</div>
       <div class="section rows">
+        <button class="btn block primary" id="valveTopView">Посмотреть сверху</button>
         <button class="btn block" id="fillValve">Залить весь клапан</button>
         <button class="btn block" id="altValve">Залить через клин</button>
         <button class="btn block" id="fillRing">Залить внешний пояс</button>
@@ -449,6 +450,9 @@ export class UI {
     this.bindSwatches(this.body.querySelector('#palette'), (code) => {
       state.active = code;
       this.body.querySelector('.active-color').outerHTML = this.activeColorCard();
+    });
+    this.body.querySelector('#valveTopView').addEventListener('click', () => {
+      this.app.lookAtCrown();
     });
     this.body.querySelector('#fillValve').addEventListener('click', () => {
       mark(); state.valve = state.valve.map(() => state.active); commit('valve');

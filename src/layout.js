@@ -201,10 +201,12 @@ export class LayoutView {
     ctx.fillStyle = ink;
     ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'center';
-    const { pitch } = this.metrics;
+    // Номера клиньев — всегда над таблицей, поэтому берём высоту текущего вида,
+    // а не длину клина: в режиме таблицы это разные величины.
+    const { pitch, totalH } = this.metrics;
     for (let c = 0; c < u.gores; c++) {
-      const [x] = this.toPx(c * pitch + u.maxW / 2, 0);
-      const [, y] = this.toPx(0, u.goreLen);
+      const [x] = this.toPx(c * pitch + (this.mode === 'grid' ? pitch : u.maxW) / 2, 0);
+      const [, y] = this.toPx(0, totalH);
       ctx.fillText(String(c + 1), x, y - 8);
     }
     ctx.textAlign = 'right';

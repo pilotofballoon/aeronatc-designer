@@ -71,6 +71,16 @@ class App {
 
   onGloss() { scene.applyGloss(); touch('gloss'); }
 
+  /** Клапан лежит в куполе — к нему нужно подняться, иначе по нему не кликнуть. */
+  lookAtCrown() {
+    if (this.inBasket) {
+      this.inBasket = false;
+      document.getElementById('btnBasket').classList.remove('is-on');
+      scene.basketView(false);
+    }
+    scene.crownView();
+  }
+
   /** Во вкладке «Дизайн» клик по оболочке не красит, а двигает элемент. */
   syncDesignMode() {
     scene.setDesignMode(state.panelTab === 'design');

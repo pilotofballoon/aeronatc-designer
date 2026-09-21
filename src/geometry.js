@@ -375,7 +375,10 @@ export function buildValve(env) {
 export function rigSpec(env) {
   const d = env.dims;
   const b = (env.model && env.model.basket) || { w: 1.6, d: 1.05, label: '160×105 см' };
-  const yFrame = -d.H * 0.125;                 // верх рамы горелки
+  // Расстояние от горловины до горелки в жизни почти не зависит от объёма:
+  // это длина строп, а не доля высоты оболочки. Привязка к H растягивала низ
+  // у спортивных моделей почти в полтора раза.
+  const yFrame = -(0.85 + 0.02 * d.D);         // верх рамы горелки
   const yBurnerTop = yFrame + BURNER_H;
   const yRim = yFrame - UPRIGHT_H;
   const yFloor = yRim - BASKET_H;

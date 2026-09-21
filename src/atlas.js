@@ -20,6 +20,7 @@ let hover = null;  // Set номеров полотнищ
 export const VALVE_PX = 768;
 let valveCanvas = null;
 let valveTexture = null;
+let valveHover = null;   // номер подсвеченной зоны клапана
 
 // Картинки декалей кешируем по id: перерисовка атласа идёт часто.
 const images = new Map();
@@ -88,8 +89,20 @@ export function redrawValve(env) {
   for (let s2 = 0; s2 < segs; s2++) sector(R * VALVE_RING, R, s2, state.valve[s2]);
   for (let s2 = 0; s2 < segs; s2++) sector(0, R * VALVE_RING, s2, state.valve[segs + s2]);
 
+  if (valveHover !== null && valveHover !== undefined) {
+    const r0 = valveHover < segs ? R * VALVE_RING : 0;
+    const r1 = valveHover < segs ? R : R * VALVE_RING;
+    const c = new THREE.Color(hexOf(state.active));
+    g.save();
+    g.globalAlpha = 0.55;
+    sector(r0, r1, valveHover % segs, state.active);
+    g.globalAlpha = 1;
+    g.restore();
+    void c;
+  }
+
   const list = state.decals.filter((d) => d.target === 'valve');
-  for (let i = list.length - 1; i >= 0; i--) drawDecal(g, list[i], env, VALVE_PX, VALVE_PX, 1);
+  for (let i = list.length - 1; i >= 0; i--) drawDecal(g, list[i], env, VALVE_PX, VALVE_PX, 1, true);
 
   valveTexture.needsUpdate = true;
 }
@@ -128,15 +141,21 @@ function aspectK(env) {
   return (circ * ATLAS_H) / (arc * ATLAS_W);
 }
 
-function drawDecal(g, d, env, W = ATLAS_W, H = ATLAS_H, kOverride = null) {
+function drawDecal(g, d, env, W = ATLAS_W, H = ATLAS_H, kOverride = null, onValve = false) {
   const k = kOverride === null ? aspectK(env) : kOverride;
-  const x = (1 - d.u) * W;
-  const y = (1 - d.v) * H;
+  // Развёртка оболочки зеркалится при выборке, развёртка клапана — нет,
+  // поэтому и место элемента считается по-разному.
+  // Развёртка клапана ориентирована противоположно развёртке оболочки:
+  // по горизонтали не зеркалится, по вертикали — наоборот.
+  const x = onValve ? d.u * W : (1 - d.u) * W;
+  const y = onValve ? d.v * H : (1 - d.v) * H;
 
   const paint = (ox) => {
     g.save();
     g.translate(x + ox, y);
-    g.rotate((d.rot * Math.PI) / 180);
+    g.rotate(((onValve ? -d.rot : d.rot) * Math.PI) / 180);
+    // Клапан читают сверху, снаружи оболочки — отражаем по вертикали.
+    if (onValve) g.scale(1, -1);
     g.globalAlpha = d.opacity;
 
     if (d.type === 'text') {
@@ -224,6 +243,14 @@ export function redrawOut() {
   }
 
   if (texture) texture.needsUpdate = true;
+}
+
+export function setValveHover(zone) {
+  const z = zone === undefined ? null : zone;
+  if (z === valveHover) return false;
+  valveHover = z;
+  redrawValve(null);
+  return true;
 }
 
 export function setHover(set) {

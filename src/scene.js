@@ -291,11 +291,28 @@ export function applyColors() {
   }
   atlas.redrawBase(env);
 
-  paintRanges(scoopMesh, state.scoop);
+  applyScoopColors();
 
   tapeMesh.visible = state.tapes;
   tmpColor.set(hexOf(state.tapeColor)).convertSRGBToLinear();
   tapeMesh.material.color.copy(tmpColor);
+}
+
+/** Цвета воздухозаборника, с подсветкой клина под курсором. */
+function applyScoopColors() {
+  if (!scoopMesh) return;
+  const attr = scoopMesh.geometry.getAttribute('color');
+  const arr = attr.array;
+  const hot = new THREE.Color(hexOf(state.active));
+  scoopMesh.userData.ranges.forEach(([start, count], i) => {
+    tmpColor.set(hexOf(state.scoop[i] || state.scoop[0]));
+    if (i === scoopHover) tmpColor.lerp(hot, 0.55);
+    tmpColor.convertSRGBToLinear();
+    for (let k = start; k < start + count; k++) {
+      arr[k * 3] = tmpColor.r; arr[k * 3 + 1] = tmpColor.g; arr[k * 3 + 2] = tmpColor.b;
+    }
+  });
+  attr.needsUpdate = true;
 }
 
 function paintRanges(mesh, codes) {
@@ -341,19 +358,42 @@ function hitEnvelope(ev) {
   return hits.length ? hits[0] : null;
 }
 
+let scoopHover = null;
+
+function clearHover(except) {
+  if (except !== 'envelope') atlas.setHover(null);
+  if (except !== 'valve') atlas.setValveHover(null);
+  if (except !== 'scoop' && scoopHover !== null) { scoopHover = null; applyScoopColors(); }
+}
+
 function onPointerMove(ev) {
   if (!env) return;
   if (designMode) return;
   const hit = hitEnvelope(ev);
-  if (!hit || hit.object.userData.kind !== 'envelope') { atlas.setHover(null); return; }
-  const panel = env.triPanel[hit.faceIndex];
-  const g = panel % state.gores;
-  const r = Math.floor(panel / state.gores);
-  if (state.linkBottom && r === 0) { atlas.setHover(new Set([panel])); return; }
-  atlas.setHover(affectedPanels(g, r));
+  if (!hit) { clearHover(null); return; }
+  const kind = hit.object.userData.kind;
+
+  if (kind === 'envelope') {
+    clearHover('envelope');
+    const panel = env.triPanel[hit.faceIndex];
+    const g = panel % state.gores;
+    const r = Math.floor(panel / state.gores);
+    if (state.linkBottom && r === 0) atlas.setHover(new Set([panel]));
+    else atlas.setHover(affectedPanels(g, r));
+  } else if (kind === 'valve') {
+    clearHover('valve');
+    atlas.setValveHover(valveMesh.userData.triZone[hit.faceIndex]);
+  } else if (kind === 'scoop') {
+    clearHover('scoop');
+    const seg = Math.min(
+      Math.floor(hit.faceIndex / scoopMesh.userData.triPerSeg),
+      state.scoop.length - 1,
+    );
+    if (seg !== scoopHover) { scoopHover = seg; applyScoopColors(); }
+  }
 }
 
-function onPointerLeave() { atlas.setHover(null); }
+function onPointerLeave() { clearHover(null); }
 
 /** Покрасить то, во что попал клик. */
 function paintHit(kind, faceIndex) {
@@ -514,6 +554,17 @@ export function basketView(on) {
     controls.update();
     savedView = null;
   }
+}
+
+/** Подняться над куполом: иначе клапан не виден и по нему не попасть. */
+export function crownView() {
+  if (!env) return;
+  const { H, D } = env.dims;
+  const top = env.dims.prof[env.dims.prof.length - 1][0] * H;
+  camera.position.set(D * 0.42, top + D * 0.78, D * 0.42);
+  controls.target.set(0, top, 0);
+  controls.minDistance = D * 0.25;
+  controls.update();
 }
 
 export function resize(w, h) {
