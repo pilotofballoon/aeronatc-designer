@@ -2,7 +2,7 @@
 
 import {
   FABRICS, FABRIC_ORDER, codeOf, colorByCode, hexOf, MEMO, CONTACTS,
-  CATEGORIES, CATEGORY_ORDER, modelsOf, getModel,
+  CATEGORIES, CATEGORY_ORDER, modelsOf, getModel, SKIRT_PALETTE,
 } from './data.js';
 import {
   state, PRESETS, applyPreset, mark, commit, touch, spec,
@@ -97,6 +97,16 @@ export class UI {
     }).join('');
   }
 
+  /** Короткая карта огнестойкой ткани для юбки и воздухозаборника. */
+  shortSwatches() {
+    return SKIRT_PALETTE.map((code) => {
+      const c = colorByCode(code);
+      return `<button class="sw${code === state.active ? ' is-active' : ''}"
+        style="background:${c.hex}" data-code="${code}"
+        title="${code} · ${esc(c.ru)} / ${esc(c.en)}"></button>`;
+    }).join('');
+  }
+
   bindSwatches(root, onPick) {
     root.querySelectorAll('.sw').forEach((b) => {
       b.addEventListener('click', () => {
@@ -147,27 +157,26 @@ export class UI {
 
       <div class="section">
         <h4>Юбка</h4>
-        <div class="rows">
-          <button class="btn block" id="fillSkirt">Залить юбку активным цветом</button>
-          <button class="btn block" id="altSkirt">Залить юбку через один</button>
+        <div class="swatches short" id="skirtPalette">${this.shortSwatches()}</div>
+        <div class="rows" style="margin-top:8px">
+          <button class="btn block" id="fillSkirt">Залить юбку</button>
+          <button class="btn block" id="altSkirt">Залить через один</button>
         </div>
-        <p class="hint">Юбка — нижний ряд самой оболочки. Кликайте по её полотнищам
-          на 3D: каждое красится отдельно, как и любое другое полотнище.</p>
+        <p class="hint">Юбка — нижний ряд оболочки. Выберите цвет и кликайте по её
+          полотнищам на 3D, каждое красится отдельно.</p>
       </div>
 
       <div class="section">
         <h4>Воздухозаборник</h4>
-        <div class="rows">
+        <div class="swatches short" id="scoopPalette">${this.shortSwatches()}</div>
+        <div class="rows" style="margin-top:8px">
           <button class="btn block" id="fillScoop">Залить воздухозаборник</button>
           <button class="btn block" id="altScoop">Залить через клин</button>
           <button class="btn block" id="skirtLikeScoop">Юбку — тканью воздухозаборника</button>
         </div>
-        <label class="switch" style="margin-top:8px">
-          <input type="checkbox" id="linkBottom" ${state.linkBottom ? 'checked' : ''}>
-          Держать юбку и воздухозаборник одной тканью</label>
         <p class="hint">Широкая центральная часть и клинья по бокам — каждый кусок
-          красится кликом на 3D. Юбку и воздухозаборник обычно кроят из одной ткани,
-          но красятся они по отдельности.</p>
+          красится кликом на 3D. Юбку и воздухозаборник кроят из огнестойкой ткани,
+          её выбор узкий, поэтому здесь своя короткая карта.</p>
       </div>
 
       <div class="section">
@@ -217,6 +226,11 @@ export class UI {
       this.renderBody();
     });
 
+    ['#skirtPalette', '#scoopPalette'].forEach((sel) => {
+      const root = this.body.querySelector(sel);
+      if (root) this.bindSwatches(root, (code) => { state.active = code; this.renderColor(); });
+    });
+
     this.body.querySelector('#fillSkirt').addEventListener('click', () => {
       mark();
       for (let g = 0; g < state.gores; g++) state.panels[g] = state.active;
@@ -235,10 +249,6 @@ export class UI {
         state.panels[g] = state.scoop[scoopSegForGore(g, state.gores)];
       }
       commit('skirt'); app.refreshAll();
-    });
-
-    this.body.querySelector('#linkBottom').addEventListener('change', (e) => {
-      mark(); state.linkBottom = e.target.checked; commit('link'); app.refreshAll();
     });
 
     this.body.querySelector('#fillScoop').addEventListener('click', () => {

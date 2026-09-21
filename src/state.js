@@ -23,7 +23,6 @@ export const state = {
   panels: [],
   valve: [],
   scoop: [],
-  linkBottom: false,     // связать юбку с воздухозаборником (по умолчанию нет)
   mouth: 'P17',          // устарело: осталось для чтения старых проектов
   active: 'S06',
   secondary: 'S05',
@@ -191,7 +190,7 @@ export function serialize() {
     app: 'aeronatc-designer', version: 1, saved: new Date().toISOString(),
     project: state.project, customer: state.customer,
     modelId: state.modelId, gores: state.gores, rows: state.rows,
-    panels: state.panels, valve: state.valve, scoop: state.scoop, linkBottom: state.linkBottom,
+    panels: state.panels, valve: state.valve, scoop: state.scoop,
     decals: state.decals,
     tapes: state.tapes, tapeColor: state.tapeColor, gloss: state.gloss,
   };
@@ -209,7 +208,6 @@ export function load(data) {
   state.tapes = !!data.tapes;
   if (data.tapeColor) state.tapeColor = data.tapeColor;
   if (typeof data.gloss === 'number') state.gloss = data.gloss;
-  if (typeof data.linkBottom === 'boolean') state.linkBottom = data.linkBottom;
   if (Array.isArray(data.decals)) {
     state.decals = data.decals;
     for (const d of state.decals) {

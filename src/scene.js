@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import {
   buildEnvelope, buildSeams, buildTapes, buildValve, buildScoop, unwrap,
-  rigSpec, scoopSegForGore, BASKET_H, UPRIGHT_H, BURNER_H, PILOT_H,
+  rigSpec, BASKET_H, UPRIGHT_H, BURNER_H, PILOT_H,
 } from './geometry.js';
 import { getModel, hexOf } from './data.js';
 import { state, mark, commit, selectedDecal } from './state.js';
@@ -283,12 +283,6 @@ function buildBasketRig(spec) {
 /** Перекрасить все вершины по карте цветов. */
 export function applyColors() {
   if (!env) return;
-  // Нижний ряд полотнищ идёт той же тканью, что и воздухозаборник.
-  if (state.linkBottom) {
-    for (let g = 0; g < state.gores; g++) {
-      state.panels[g] = state.scoop[scoopSegForGore(g, state.gores)];
-    }
-  }
   atlas.redrawBase(env);
 
   applyScoopColors();

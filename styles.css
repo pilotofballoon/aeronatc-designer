@@ -408,3 +408,5 @@ button { font: inherit; color: inherit; }
   background: var(--surface-2); color: var(--ink); font: inherit; resize: vertical;
 }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.swatches.short { grid-template-columns: repeat(6, 1fr); }

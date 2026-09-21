@@ -324,7 +324,7 @@ export function buildValve(env) {
   const { segs, radius, y, ring } = valveSpec(env);
   const ANG = 5;                   // дробление по дуге для гладкого круга
   const RAD = 3;                   // дробление клина по радиусу
-  const sag = radius * 0.13;       // провис ткани внутрь
+  const rise = radius * 0.11;      // клапан слегка выгнут наружу, вверх
   const pos = [], nor = [], uvs = [], idx = [];
   const ranges = [];
   const triZone = [];
@@ -334,8 +334,9 @@ export function buildValve(env) {
   const put = (a2, t) => {
     const r = radius * t;
     const x = r * Math.cos(a2), z = r * Math.sin(a2);
-    pos.push(x, y - sag * (1 - t * t), z);
-    const n = new THREE.Vector3(-x * 0.35, radius, -z * 0.35).normalize();
+    pos.push(x, y + rise * (1 - t * t), z);
+    // Нормаль купола смотрит вверх и наружу.
+    const n = new THREE.Vector3(x * 0.35, radius, z * 0.35).normalize();
     nor.push(n.x, n.y, n.z);
     uvs.push(0.5 + x / (2 * radius), 0.5 + z / (2 * radius));
     v++;
