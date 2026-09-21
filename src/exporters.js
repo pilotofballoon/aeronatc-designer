@@ -1,7 +1,7 @@
 // Выгрузки: PNG, JSON-проект, карта цветов, спецификация и печатная форма PDF.
 
 import { state, serialize, spec } from './state.js';
-import { colorByCode, getModel, CONTACTS, MEMO } from './data.js';
+import { colorByCode, getModel, CONTACTS } from './data.js';
 
 export function download(name, href) {
   const a = document.createElement('a');
@@ -54,7 +54,7 @@ export function exportCSV(env) {
  * Печатная форма: титул, 3D-вид, раскладка, спецификация ткани и памятка.
  * Открывается окно печати — сохранение в PDF делает сам браузер.
  */
-export function printSheet(env, shot3d, shotLayout) {
+export function printSheet(env, shots, shotLayout) {
   const m = getModel(state.modelId);
   const d = env.dims;
   const items = spec(env);
@@ -74,33 +74,37 @@ export function printSheet(env, shot3d, shotLayout) {
     </tr>`;
   }).join('');
 
-  const memo = MEMO.sections.map((s) => `
-    <h3>${s.h}</h3>
-    <ul>${s.items.map((t) => `<li>${t}</li>`).join('')}</ul>`).join('');
+  const views = shots.filter(Boolean).map((v) => `
+    <figure><img src="${v.url}" alt="${v.label}"><figcaption>${v.label}</figcaption></figure>
+  `).join('');
 
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
   <title>${CONTACTS.brand} — дизайн оболочки ${m.code}</title>
   <style>
-    @page { size: A4; margin: 14mm; }
-    body { font: 12px/1.5 Inter, system-ui, sans-serif; color: #15191f; }
+    @page { size: A4; margin: 12mm; }
+    body { font: 12px/1.45 Inter, system-ui, sans-serif; color: #15191f; }
     h1 { font-size: 20px; margin: 0 0 2px; }
-    h2 { font-size: 14px; margin: 22px 0 8px; border-bottom: 1px solid #d7dce3; padding-bottom: 4px; }
-    h3 { font-size: 12px; margin: 14px 0 4px; }
-    .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #15191f; padding-bottom: 8px; }
+    h2 { font-size: 13px; margin: 16px 0 8px; border-bottom: 1px solid #d7dce3; padding-bottom: 4px; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start;
+            border-bottom: 2px solid #15191f; padding-bottom: 8px; }
     .muted { color: #667; font-size: 11px; }
-    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
-    .grid div { background: #f3f5f8; border-radius: 6px; padding: 8px 10px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 4px; }
+    .grid div { background: #f3f5f8; border-radius: 6px; padding: 7px 9px; }
     .grid b { display: block; font-size: 15px; }
-    img { max-width: 100%; border: 1px solid #d7dce3; border-radius: 6px; }
+    .views { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .views figure { margin: 0; }
+    .views img { width: 100%; display: block; border: 1px solid #d7dce3; border-radius: 6px; }
+    .views figcaption { font-size: 10px; color: #667; padding-top: 3px; text-align: center; }
+    img.layout { max-width: 100%; border: 1px solid #d7dce3; border-radius: 6px; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
     th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #e3e7ec; }
     th { background: #f3f5f8; }
     .num { text-align: right; }
-    .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(0,0,0,.25); margin-right: 6px; vertical-align: -1px; }
+    .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+          border: 1px solid rgba(0,0,0,.25); margin-right: 6px; vertical-align: -1px; }
     .en { color: #889; }
-    ul { margin: 4px 0 0 16px; padding: 0; }
-    li { margin-bottom: 3px; }
     .page { page-break-before: always; }
+    .sign { margin-top: 22px; font-size: 11px; color: #445; }
   </style></head><body>
     <div class="head">
       <div>
@@ -120,30 +124,26 @@ export function printSheet(env, shot3d, shotLayout) {
       <div><span class="muted">Раскрой</span><b>${state.gores} × ${state.rows}</b>клиньев × рядов</div>
     </div>
 
-    <h2>Внешний вид</h2>
-    <img src="${shot3d}" alt="3D-вид оболочки">
+    <div class="views">${views}</div>
 
     <div class="page"></div>
     <h2>Плоская раскладка</h2>
-    <img src="${shotLayout}" alt="Раскладка">
+    <img class="layout" src="${shotLayout}" alt="Раскладка">
 
     <div class="page"></div>
     <h2>Спецификация ткани</h2>
     <table>
-      <thead><tr><th>Код</th><th>Цвет</th><th>Ткань</th><th>Узел</th><th class="num">Полотнищ</th><th class="num">Площадь, м²</th></tr></thead>
+      <thead><tr><th>Код</th><th>Цвет</th><th>Ткань</th><th>Узел</th>
+        <th class="num">Полотнищ</th><th class="num">Площадь, м²</th></tr></thead>
       <tbody>${specRows}</tbody>
       <tfoot><tr><th colspan="4">Итого раскройных деталей</th>
         <th class="num">${totalPieces}</th>
         <th class="num">${totalArea.toFixed(1)}</th></tr></tfoot>
     </table>
-    <p class="muted">Площадь указана по развёртке, без припусков на швы и усиления.</p>
 
-    <h2>${MEMO.title}</h2>
-    <p class="muted">${MEMO.subtitle}</p>
-    ${memo}
-
-    <p class="muted" style="margin-top:24px">
-      Согласовано: ___________________ / ___________________ &nbsp;&nbsp; «___» ____________ 20___ г.
+    <p class="sign">
+      Согласовано: ___________________ / ___________________ &nbsp;&nbsp;
+      «___» ____________ 20___ г.
     </p>
     <script>window.addEventListener('load', () => setTimeout(() => window.print(), 350));<\/script>
   </body></html>`;

@@ -264,9 +264,11 @@ class App {
 
   exportPDF() {
     if (!this.layout.env) this.layout.setEnv(this.env);
-    const shot3d = scene.snapshotPNG(1400);
+    // Четыре ракурса вместо пояснений: сбоку, сбоку с поворотом, сверху
+    // с клапаном и снизу, где видно оболочку из-под гондолы.
+    const shots = ['side', 'side90', 'top', 'bottom'].map((v) => scene.docShot(v, 1100));
     const shotLayout = this.layout.exportPNG(1.6);
-    printSheet(this.env, shot3d, shotLayout);
+    printSheet(this.env, shots, shotLayout);
   }
 }
 

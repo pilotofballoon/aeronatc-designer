@@ -567,6 +567,77 @@ export function render() {
   renderer.render(scene, camera);
 }
 
+/**
+ * Ракурсы для листа согласования. Азимут в радианах, высота — синус угла
+ * подъёма камеры, ty — точка прицеливания как доля высоты оболочки.
+ */
+export const DOC_VIEWS = {
+  side:   { az: 0,             el: 0.10,  ty: 0.46, label: 'Вид сбоку' },
+  side90: { az: Math.PI / 2,   el: 0.10,  ty: 0.46, label: 'Вид сбоку, поворот 90°' },
+  top:    { az: Math.PI * 0.3, el: 0.62,  ty: 0.70, label: 'Вид сверху — клапан' },
+  bottom: { az: Math.PI * 0.8, el: -0.34, ty: 0.28, label: 'Вид снизу — под гондолой' },
+};
+
+/** Кадр с указанного ракурса, поверх белого листа или неба. Для документа. */
+export function docShot(name, width = 1100) {
+  if (!env) return null;
+  const v = DOC_VIEWS[name];
+  const { H, D } = env.dims;
+
+  const saved = {
+    pos: camera.position.clone(),
+    target: controls.target.clone(),
+    fov: camera.fov,
+    w: renderer.domElement.width,
+    h: renderer.domElement.height,
+    aspect: camera.aspect,
+  };
+
+  const height = Math.round(width * 0.78);
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.fov = 34;
+
+  // Вмещаем оболочку вместе с подвеской при любом угле подъёма.
+  const contentH = H * 1.5;
+  const fov = (camera.fov * Math.PI) / 180;
+  const dist = Math.max(
+    contentH / 2 / Math.tan(fov / 2),
+    D / 2 / Math.tan(fov / 2) / camera.aspect,
+  ) * 1.16;
+
+  const cy = H * v.ty;
+  const horiz = Math.sqrt(Math.max(0, 1 - v.el * v.el));
+  camera.position.set(
+    Math.cos(v.az) * horiz * dist,
+    cy + v.el * dist,
+    Math.sin(v.az) * horiz * dist,
+  );
+  camera.lookAt(0, cy, 0);
+  camera.updateProjectionMatrix();
+  renderer.render(scene, camera);
+
+  const out = document.createElement('canvas');
+  out.width = width; out.height = height;
+  const g = out.getContext('2d');
+  if (!skyOn || !drawBackdrop(g, width, height)) {
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, width, height);
+  }
+  g.drawImage(renderer.domElement, 0, 0);
+  const url = out.toDataURL('image/jpeg', 0.92);
+
+  camera.position.copy(saved.pos);
+  controls.target.copy(saved.target);
+  camera.fov = saved.fov;
+  camera.aspect = saved.aspect;
+  camera.updateProjectionMatrix();
+  renderer.setSize(saved.w, saved.h, false);
+  controls.update();
+  renderer.render(scene, camera);
+  return { url, label: v.label };
+}
+
 export function snapshotPNG(width = 1600) {
   const el = renderer.domElement;
   const ratio = el.height / el.width;
